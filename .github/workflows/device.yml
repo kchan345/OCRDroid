@@ -1,0 +1,60 @@
+name: Physical ARM64 acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      inference_run_id:
+        description: Successful Android inference gate run containing models and ARM64 probe
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  phone:
+    runs-on: [self-hosted, linux, android-device]
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require one offline API 33+ ARM64 phone with more than 6 GB RAM
+        run: |
+          set -euo pipefail
+          test "$(adb devices | awk '$2 == "device" {n++} END {print n+0}')" = 1
+          test "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" != 1
+          test "$(adb shell getprop ro.product.cpu.abi | tr -d '\r')" = arm64-v8a
+          test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" -ge 33
+          test "$(adb shell awk '/MemTotal/ {print $2}' /proc/meminfo | tr -d '\r')" -gt 6000000
+          test "$(adb shell settings get global airplane_mode_on | tr -d '\r')" = 1
+          test "$(adb shell settings get global wifi_on | tr -d '\r')" = 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: ovisocr2-q4
+          path: models
+          run-id: ${{ inputs.inference_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: probe-arm64-v8a
+          path: build-android
+          run-id: ${{ inputs.inference_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-inference-evidence
+          path: evidence
+          run-id: ${{ inputs.inference_run_id }}
+          github-token: ${{ github.token }}
+      - name: Reuse verified fixtures
+        run: |
+          test -f evidence/results/verified.json
+          cp -r evidence/fixtures fixtures
+      - name: Run real-device inference
+        env:
+          PHYSICAL_DEVICE: '1'
+        run: bash scripts/android_probe.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: physical-arm64-evidence
+          path: results/
