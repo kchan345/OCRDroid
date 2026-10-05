@@ -19,6 +19,10 @@ bool aborted(void *data) {
     return static_cast<std::atomic<bool> *>(data)->load();
 }
 
+bool loading(float, void *data) {
+    return !aborted(data);
+}
+
 const char *instruction =
     "\nExtract all readable content from the image in natural human reading order and output "
     "the result as a single Markdown document. For charts or images, represent them using an "
@@ -42,7 +46,9 @@ ocr::Result ocr::recognize(const std::string &model_path, const std::string &pro
     check_cancel();
     auto mp = llama_model_default_params();
     mp.n_gpu_layers = 0;
-    mp.use_mmap = true;
+    mp.load_mode = LLAMA_LOAD_MODE_MMAP;
+    mp.progress_callback = loading;
+    mp.progress_callback_user_data = &cancel;
     Handle<llama_model, llama_model_free> model(
         llama_model_load_from_file(model_path.c_str(), mp), llama_model_free);
     if (!model) throw std::runtime_error("Cannot load language model; check GGUF and available RAM");
@@ -64,6 +70,8 @@ ocr::Result ocr::recognize(const std::string &model_path, const std::string &pro
     vp.warmup = false;
     vp.image_min_tokens = 196;
     vp.image_max_tokens = 1024;
+    vp.progress_callback = loading;
+    vp.progress_callback_user_data = &cancel;
     Handle<mtmd_context, mtmd_free> vision(
         mtmd_init_from_file(projector_path.c_str(), model.get(), vp), mtmd_free);
     if (!vision) throw std::runtime_error("Cannot load matching vision projector");

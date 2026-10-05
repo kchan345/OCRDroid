@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 mkdir -p results
+cp runtime.lock.json results/runtime.lock.json
+sha256sum build-android/ocr-probe models/*.gguf > results/input-sha256.txt
 remote=/data/local/tmp/ocrdroid
 adb shell mkdir -p "$remote"
 adb push build-android/ocr-probe "$remote/ocr-probe"

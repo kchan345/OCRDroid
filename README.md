@@ -22,6 +22,16 @@ The app milestone is gated on this runtime check. Emulator evidence does **not**
 establish ARM phone speed, thermals, or memory behavior. A physical arm64 device
 with more than 6 GB RAM is still required for hardware acceptance.
 
+`Physical ARM64 acceptance` is a manually dispatched workflow for an existing,
+dedicated Linux runner labeled `android-device`, with `adb`, Python, and exactly
+one authorized phone connected. Put that phone in airplane mode with Wi-Fi off
+before dispatching; the workflow does not change the phone's radio settings.
+Supply a successful inference run ID to reuse its exact model/probe artifacts.
+The workflow rejects emulators, older APIs, non-ARM64 devices, and devices with
+6,000,000 KiB or less reported RAM, then repeats the OCR and memory gate. It
+records elapsed times without inventing a latency target. No physical runner or
+phone is provisioned by this repository.
+
 ## Model formats and limits
 
 `runtime.lock.json` pins both model and llama.cpp revisions. The model folder is
