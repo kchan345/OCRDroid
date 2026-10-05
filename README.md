@@ -125,7 +125,8 @@ All builds/tests run on GitHub Actions, not on the local workstation:
 Changes to the native core or model lock require a new successful inference gate
 before running app CI. For app-only changes, CI reuses the latest compatible
 successful gate. Its APK artifact is uploaded only after instrumentation passes.
-The debug-only, non-exported fixture provider is for exercising SAF imports in CI.
+The debug-only fixture provider is protected by the platform's signature-level
+MANAGE_DOCUMENTS permission and exercises SAF imports in CI.
 The NDK build uses 16 KiB-compatible JNI library alignment and optimized CPU code,
 including in the development APK. SDK, NDK, Gradle and Python dependencies are
 provisioned only inside workflows.

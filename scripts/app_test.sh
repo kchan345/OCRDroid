@@ -2,6 +2,7 @@
 set -euo pipefail
 package=io.github.ocrdroid
 mkdir -p results
+trap 'adb logcat -d -t 1500 > results/logcat.txt || echo "Unable to collect logcat" >&2' EXIT
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell run-as "$package" mkdir -p files/test-source
@@ -15,6 +16,5 @@ timeout 1200 adb shell am instrument -w -r "$package.test/androidx.test.runner.A
 if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' results/instrumentation.txt; then
   exit 1
 fi
-grep -q 'OK (3 tests)' results/instrumentation.txt
+grep -q 'OK (4 tests)' results/instrumentation.txt
 adb exec-out run-as "$package" cat files/app-evidence.json > results/app-evidence.json
-adb logcat -d -t 1500 > results/logcat.txt

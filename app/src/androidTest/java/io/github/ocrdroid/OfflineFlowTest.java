@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.provider.DocumentsContract;
+import androidx.core.content.FileProvider;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -64,7 +65,23 @@ public class OfflineFlowTest {
             scenario.onActivity(activity -> {
                 SelectionEditor editor = activity.findViewById(R.id.editor);
                 assertTrue(editor.getText().toString().contains("Edited 4729"));
+                int total = editor.getText().toString().indexOf("Total");
+                editor.setSelection(total, total + 5);
+                DocumentView preview = activity.findViewById(R.id.preview);
+                assertTrue("Unedited anchors must survive rotation", preview.highlightedRegionCount() > 0);
             });
+            File exportDirectory = new File(context.getCacheDir(), "camera");
+            assertTrue(exportDirectory.isDirectory() || exportDirectory.mkdir());
+            File exported = new File(exportDirectory, "edited.txt");
+            Uri destination = FileProvider.getUriForFile(context, context.getPackageName() + ".files", exported);
+            var saved = new java.util.concurrent.CountDownLatch(1);
+            scenario.onActivity(activity -> {
+                OcrViewModel vm = new ViewModelProvider(activity).get(OcrViewModel.class);
+                vm.saveText(destination);
+                vm.busy.observe(activity, working -> { if (!working) saved.countDown(); });
+            });
+            assertTrue("Export did not finish", saved.await(15, java.util.concurrent.TimeUnit.SECONDS));
+            assertTrue(java.nio.file.Files.readString(exported.toPath()).contains("Edited 4729"));
         }
         JSONObject evidence = new JSONObject();
         evidence.put("text", result.text);

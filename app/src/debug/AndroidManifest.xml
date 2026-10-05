@@ -3,7 +3,8 @@
         <provider
             android:name=".FixtureDocuments"
             android:authorities="${applicationId}.fixtures"
-            android:exported="false"
+            android:exported="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS"
             android:grantUriPermissions="true" />
     </application>
 </manifest>

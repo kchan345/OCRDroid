@@ -10,7 +10,7 @@ import android.provider.DocumentsProvider;
 import java.io.File;
 import java.io.FileNotFoundException;
 
-/** Private debug-only provider exercises the same SAF import path as a user folder. */
+/** Signature-protected debug provider exercises the user's SAF import path. */
 public final class FixtureDocuments extends DocumentsProvider {
     private static final String[] COLUMNS = {
         Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE,

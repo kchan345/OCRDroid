@@ -3,6 +3,8 @@ package io.github.ocrdroid;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.ImageDecoder;
+import android.graphics.Canvas;
+import android.graphics.Color;
 import android.net.Uri;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -13,7 +15,7 @@ public final class ImageFiles {
 
     public static Bitmap read(Context context, Uri uri) throws IOException {
         ImageDecoder.Source source = ImageDecoder.createSource(context.getContentResolver(), uri);
-        return ImageDecoder.decodeBitmap(source, (decoder, info, ignored) -> {
+        Bitmap decoded = ImageDecoder.decodeBitmap(source, (decoder, info, ignored) -> {
             int width = info.getSize().getWidth();
             int height = info.getSize().getHeight();
             float scale = Math.min(1f, 2048f / Math.max(width, height));
@@ -21,6 +23,13 @@ public final class ImageFiles {
             decoder.setAllocator(ImageDecoder.ALLOCATOR_SOFTWARE);
             decoder.setTargetColorSpace(android.graphics.ColorSpace.get(android.graphics.ColorSpace.Named.SRGB));
         });
+        if (!decoded.hasAlpha()) return decoded;
+        Bitmap opaque = Bitmap.createBitmap(decoded.getWidth(), decoded.getHeight(), Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(opaque);
+        canvas.drawColor(Color.WHITE);
+        canvas.drawBitmap(decoded, 0, 0, null);
+        decoded.recycle();
+        return opaque;
     }
 
     public static void write(Bitmap bitmap, File file) throws IOException {

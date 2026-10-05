@@ -13,6 +13,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.ArrayAdapter;
+import android.widget.AdapterView;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -63,6 +64,10 @@ public final class MainActivity extends AppCompatActivity {
             WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         model = new ViewModelProvider(this).get(OcrViewModel.class);
         if (saved != null && saved.getString("camera") != null) cameraUri = Uri.parse(saved.getString("camera"));
+        if (saved != null) {
+            model.precisionIndex = saved.getInt("precision", model.precisionIndex);
+            model.scriptIndex = saved.getInt("script", model.scriptIndex);
+        }
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(16), dp(8), dp(16), dp(8));
@@ -94,6 +99,10 @@ public final class MainActivity extends AppCompatActivity {
         LinearLayout choices = row();
         precision = spinner(R.array.precisions);
         script = spinner(R.array.scripts);
+        precision.setSelection(model.precisionIndex);
+        script.setSelection(model.scriptIndex);
+        precision.setOnItemSelectedListener(selected(position -> model.precisionIndex = position));
+        script.setOnItemSelectedListener(selected(position -> model.scriptIndex = position));
         choices.addView(labeledSpinner(R.string.model_label, precision), weighted());
         choices.addView(labeledSpinner(R.string.script_label, script), weighted());
         settingsBody.addView(choices);
@@ -126,6 +135,7 @@ public final class MainActivity extends AppCompatActivity {
         compactable.add(status);
         editor = new SelectionEditor(this);
         editor.setId(R.id.editor);
+        editor.setSaveEnabled(false);
         editor.setGravity(Gravity.TOP | Gravity.START);
         editor.setTextSize(16);
         editor.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE |
@@ -155,18 +165,15 @@ public final class MainActivity extends AppCompatActivity {
             if (working) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         });
-        model.importedPrecision.observe(this, value -> precision.setSelection("BF16".equals(value) ? 1 : 0));
         model.revision.observe(this, value -> {
             rendering = true;
+            precision.setSelection(model.precisionIndex);
+            script.setSelection(model.scriptIndex);
             if (!editor.getText().toString().equals(model.text)) editor.setText(model.text);
             preview.setImage(model.image);
             rendering = false;
             showSelection(editor.getSelectionStart(), editor.getSelectionEnd());
         });
-        if (saved != null) {
-            precision.setSelection(saved.getInt("precision", 0));
-            script.setSelection(saved.getInt("script", 0));
-        }
     }
 
     private void showSelection(int start, int end) {
@@ -238,5 +245,13 @@ public final class MainActivity extends AppCompatActivity {
         spinner.setContentDescription(getString(resource));
         layout.addView(spinner);
         return layout;
+    }
+    private AdapterView.OnItemSelectedListener selected(java.util.function.IntConsumer update) {
+        return new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                update.accept(position);
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        };
     }
 }

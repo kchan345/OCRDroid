@@ -22,7 +22,8 @@ public final class OcrViewModel extends AndroidViewModel {
     public final MutableLiveData<String> status = new MutableLiveData<>();
     public final MutableLiveData<Boolean> busy = new MutableLiveData<>(false);
     public final MutableLiveData<Integer> revision = new MutableLiveData<>(0);
-    public final MutableLiveData<String> importedPrecision = new MutableLiveData<>();
+    public int precisionIndex;
+    public int scriptIndex;
     private final Handler main = new Handler(Looper.getMainLooper());
     private static final ExecutorService WORKER = Executors.newSingleThreadExecutor();
     private final ModelStore models;
@@ -72,7 +73,7 @@ public final class OcrViewModel extends AndroidViewModel {
             try {
                 String precision = models.importFolder(uri);
                 finish(() -> {
-                    importedPrecision.setValue(precision);
+                    precisionIndex = "BF16".equals(precision) ? 1 : 0;
                     status.setValue(message(R.string.model_ready, precision));
                 });
             } catch (IOException | org.json.JSONException | java.security.NoSuchAlgorithmException |
