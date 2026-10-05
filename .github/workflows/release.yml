@@ -11,6 +11,10 @@ on:
         type: string
         default: v0.1.0-preview
         required: true
+      bf16_run_id:
+        description: Optional successful BF16 export and Android acceptance run
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -59,6 +63,29 @@ jobs:
           path: models
           run-id: ${{ env.GATE_RUN }}
           github-token: ${{ github.token }}
+      - name: Validate optional BF16 provenance
+        if: inputs.bf16_run_id != ''
+        env:
+          BF16_RUN: ${{ inputs.bf16_run_id }}
+        run: |
+          [[ "$BF16_RUN" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BF16_RUN" > bf16-run.json
+          test "$(jq -r .conclusion bf16-run.json)" = success
+          test "$(jq -r .path bf16-run.json)" = .github/workflows/bf16.yml
+      - uses: actions/download-artifact@v4
+        if: inputs.bf16_run_id != ''
+        with:
+          name: ovisocr2-bf16
+          path: bf16
+          run-id: ${{ inputs.bf16_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        if: inputs.bf16_run_id != ''
+        with:
+          name: bf16-android-evidence
+          path: bf16-evidence
+          run-id: ${{ inputs.bf16_run_id }}
+          github-token: ${{ github.token }}
       - name: Package tested APK, model folder and evidence
         run: |
           mkdir -p release
@@ -66,7 +93,15 @@ jobs:
           (cd models && zip -0 -q ../release/ovisocr2-q4.zip ./*)
           (cd evidence && zip -q -r ../release/app-evidence.zip results)
           cp models/LICENSE release/MODEL-LICENSE.txt
-          (cd release && sha256sum OCRDroid-preview.apk ovisocr2-q4.zip app-evidence.zip > SHA256SUMS.txt)
+          if [ -d bf16 ]; then
+            test -f bf16-evidence/verified.json
+            jq -S '{model_repository, model_revision, llama_revision}' models/manifest.json > q4-pins.json
+            jq -S '{model_repository, model_revision, llama_revision}' bf16/manifest.json > bf16-pins.json
+            cmp q4-pins.json bf16-pins.json
+            (cd bf16 && zip -0 -q ../release/ovisocr2-bf16.zip ./*)
+            (cd bf16-evidence && zip -q -r ../release/bf16-evidence.zip .)
+          fi
+          (cd release && sha256sum *.apk *.zip > SHA256SUMS.txt)
           cat > release-notes.txt <<EOF
           Offline OvisOCR2 Q4 OCR for Android API 33+, with camera/photo input, plain-text editing and best-effort text-region highlights.
 

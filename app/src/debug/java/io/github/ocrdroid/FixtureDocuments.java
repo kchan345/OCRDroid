@@ -25,12 +25,18 @@ public final class FixtureDocuments extends DocumentsProvider {
     }
     private void add(MatrixCursor cursor, String id, File file) {
         MatrixCursor.RowBuilder row = cursor.newRow();
-        row.add(Document.COLUMN_DOCUMENT_ID, id);
-        row.add(Document.COLUMN_DISPLAY_NAME, file.getName());
-        row.add(Document.COLUMN_MIME_TYPE, file.isDirectory() ? Document.MIME_TYPE_DIR : "application/octet-stream");
-        row.add(Document.COLUMN_SIZE, file.length());
-        row.add(Document.COLUMN_FLAGS, 0);
-        row.add(Document.COLUMN_LAST_MODIFIED, file.lastModified());
+        for (String column : cursor.getColumnNames()) {
+            Object value = switch (column) {
+                case Document.COLUMN_DOCUMENT_ID -> id;
+                case Document.COLUMN_DISPLAY_NAME -> file.getName();
+                case Document.COLUMN_MIME_TYPE -> file.isDirectory() ? Document.MIME_TYPE_DIR : "application/octet-stream";
+                case Document.COLUMN_SIZE -> file.length();
+                case Document.COLUMN_FLAGS -> 0;
+                case Document.COLUMN_LAST_MODIFIED -> file.lastModified();
+                default -> null;
+            };
+            row.add(value);
+        }
     }
     @Override public Cursor queryRoots(String[] projection) {
         MatrixCursor cursor = new MatrixCursor(new String[]{Root.COLUMN_ROOT_ID, Root.COLUMN_DOCUMENT_ID,
@@ -39,12 +45,12 @@ public final class FixtureDocuments extends DocumentsProvider {
         return cursor;
     }
     @Override public Cursor queryDocument(String id, String[] projection) throws FileNotFoundException {
-        MatrixCursor cursor = new MatrixCursor(COLUMNS);
+        MatrixCursor cursor = new MatrixCursor(projection == null ? COLUMNS : projection);
         add(cursor, id, file(id));
         return cursor;
     }
     @Override public Cursor queryChildDocuments(String id, String[] projection, String order) throws FileNotFoundException {
-        MatrixCursor cursor = new MatrixCursor(COLUMNS);
+        MatrixCursor cursor = new MatrixCursor(projection == null ? COLUMNS : projection);
         File[] files = file(id).listFiles();
         if (files == null) throw new FileNotFoundException(id);
         for (File child : files) add(cursor, child.getName(), child);

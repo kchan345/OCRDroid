@@ -85,6 +85,11 @@ llama.cpp and must be converted in CI, not on the phone.
 Use the `Export optional BF16 model folder` workflow to export the BF16 language
 model with the matching F16 vision projector and a checksum manifest. This
 higher-memory profile is optional and separate from Q4 hardware acceptance.
+Its native Android execution passed in
+[run 37383883636](https://github.com/kchan345/OCRDroid/actions/runs/37383883636):
+the receipt took 171.523 seconds at 1899336 KiB peak RSS, and the note took
+168.741 seconds at 1899748 KiB. Both produced the same expected text as Q4.
+These are emulator measurements, not phone performance estimates.
 Import that exported folder using the same button; the precision selector changes
 to **BF16**. Both precision variants can remain installed, and the selector switches
 between them. Arbitrary HF folders or other models are intentionally rejected.
@@ -121,6 +126,7 @@ All builds/tests run on GitHub Actions, not on the local workstation:
 | Build and exercise OCR app | Require a matching successful core gate; unit tests, Android lint, APK build, then actual offline JNI inference, SAF import, localization, selection, edits and rotation on API 33 |
 | Export optional BF16 model folder | Export higher-precision language GGUF with matching F16 projector and manifest |
 | Physical ARM64 acceptance | Repeat the native gate on a supplied real phone; currently awaiting a device runner |
+| Publish verified preview | Publish only successful app/model artifacts as a prerelease, with evidence and SHA-256 checksums |
 
 Changes to the native core or model lock require a new successful inference gate
 before running app CI. For app-only changes, CI reuses the latest compatible
