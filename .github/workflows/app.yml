@@ -1,0 +1,102 @@
+name: Build and exercise OCR app
+on:
+  push:
+    branches: [main]
+    paths: ['app/**', '*.gradle', 'gradle.properties', 'native/jni.cpp', 'scripts/app_test.sh', '.github/workflows/app.yml']
+  workflow_dispatch:
+    inputs:
+      inference_run_id:
+        description: Successful inference gate run (blank uses latest success)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  app:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require a passing gate for this model and native core
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_RUN: ${{ inputs.inference_run_id }}
+        run: |
+          set -euo pipefail
+          RUN="$REQUESTED_RUN"
+          if [ -z "$RUN" ]; then
+            RUN=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/inference.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].id')
+          fi
+          [[ "$RUN" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" > gate.json
+          test "$(jq -r .conclusion gate.json)" = success
+          test "$(jq -r .path gate.json)" = .github/workflows/inference.yml
+          git diff --exit-code "$(jq -r .head_sha gate.json)" HEAD -- native/ocr.cpp native/ocr.h runtime.lock.json
+          echo "GATE_RUN=$RUN" >> "$GITHUB_ENV"
+          echo "LLAMA_REV=$(jq -r .llama_revision runtime.lock.json)" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ovisocr2-q4
+          path: models
+          run-id: ${{ env.GATE_RUN }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-inference-evidence
+          path: gate-evidence
+          run-id: ${{ env.GATE_RUN }}
+          github-token: ${{ github.token }}
+      - run: |
+          test -f gate-evidence/results/verified.json
+          cmp runtime.lock.json gate-evidence/results/runtime.lock.json
+          cp -r gate-evidence/fixtures fixtures
+      - uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: ${{ env.LLAMA_REV }}
+          path: vendor/llama.cpp
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Unit tests, lint, APK and instrumentation APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          arch: x86_64
+          ram-size: 4096M
+          disk-size: 6000M
+          heap-size: 512M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -cores 2
+          script: bash scripts/app_test.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-evidence
+          path: |
+            results/
+            app/build/reports/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OCRDroid-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 90

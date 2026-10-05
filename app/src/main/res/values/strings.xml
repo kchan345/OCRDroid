@@ -1,0 +1,49 @@
+<resources>
+    <string name="app_name">OCRDroid</string>
+    <string name="tagline">Private, on-device document OCR</string>
+    <string name="import_model">Import model folder</string>
+    <string name="camera">Camera</string>
+    <string name="photos">Photos</string>
+    <string name="recognize">Read with OvisOCR2</string>
+    <string name="cancel">Cancel</string>
+    <string name="export_text">Save text</string>
+    <string name="editor_hint">OCR text appears here. Edit it as plain text, or select words to highlight their image region.</string>
+    <string name="preview_description">Document image with highlights for selected OCR text</string>
+    <string name="model_label">Model precision</string>
+    <string name="script_label">Highlight language</string>
+    <string name="ready">Import the Q4 model folder, then choose a photo or use the camera. No internet access is used.</string>
+    <string name="no_model">Import a model folder for this precision first.</string>
+    <string name="need_image">Choose a photo first.</string>
+    <string name="working">Reading locally with OvisOCR2. Keep this screen open; CPU inference can take time.</string>
+    <string name="localizing">OCR complete. Locating text regions offline...</string>
+    <string name="importing">Copying and checking model weights. This needs additional device storage.</string>
+    <string name="loading_image">Opening photo...</string>
+    <string name="cancel_pending">Cancellation requested. Waiting for the current native operation to stop.</string>
+    <string name="cancelled">OCR cancelled.</string>
+    <string name="failure">Operation failed: %1$s</string>
+    <string name="model_ready">%1$s model imported and checksum-verified.</string>
+    <string name="photo_ready">Photo ready. Tap Read with OvisOCR2.</string>
+    <string name="finished">OCR complete: %1$.1f s, %2$d tokens. %3$d text regions aligned. Verify important content.</string>
+    <string name="truncated">Output reached the 2048-token limit and is incomplete. Use a smaller crop.</string>
+    <string name="grounding_failure">OCR text is available, but highlighting failed: %1$s</string>
+    <string name="selection_hint">Select OCR text to highlight matched regions. Edited or unmatched words have no reliable region.</string>
+    <string name="selection_matched">%1$d matched image regions highlighted.</string>
+    <string name="selection_unmatched">No reliable image region for this selection. It may be edited, unmatched, or outside the localizer\'s supported script.</string>
+    <string name="device_warning">Experimental CPU runtime. Physical ARM64 phone performance is not yet verified. More than 6 GB RAM is recommended.</string>
+    <string name="low_memory">This device has 6 GB RAM or less. Inference may fail; Q4 is strongly recommended.</string>
+    <string name="bf16_warning">BF16 uses substantially more RAM and storage. Select an exported BF16 GGUF folder, not raw safetensors.</string>
+    <string name="saved">Text saved.</string>
+    <string name="no_camera">No camera app is available.</string>
+    <string name="highlight_disclosure">Highlights use bundled ML Kit text localization, not OvisOCR2 boxes. Transcription always comes from OvisOCR2. Matching is best-effort; no guessed boxes are drawn.</string>
+    <string-array name="precisions">
+        <item>Q4_K_M</item>
+        <item>BF16</item>
+    </string-array>
+    <string-array name="scripts">
+        <item>Latin</item>
+        <item>Chinese</item>
+        <item>Japanese</item>
+        <item>Korean</item>
+        <item>Devanagari</item>
+    </string-array>
+</resources>

@@ -1,5 +1,8 @@
 .reference/
 .gradle/
+.cxx/
+**/.cxx/
+vendor/
 **/build/
 local.properties
 models/
