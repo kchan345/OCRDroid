@@ -54,4 +54,20 @@ public class TextAnchorsTest {
     @Test public void caretDoesNotHighlight() {
         assertTrue(TextAnchors.selected(List.of(new TextAnchors.Anchor(0, 5, box)), 2, 2).isEmpty());
     }
+
+    @Test public void htmlMetadataIsNotGroundedAsDocumentText() {
+        String text = "<img src=\"images/bbox_10_20_80_40.jpg\" />\nInvoice 10";
+        var anchors = TextAnchors.align(text, List.of(new TextAnchors.Region("Invoice 10", box)));
+        assertTrue(TextAnchors.selected(anchors, 0, 39).isEmpty());
+        int invoice = text.indexOf("Invoice");
+        assertEquals(1, TextAnchors.selected(anchors, invoice, text.length()).size());
+    }
+
+    @Test public void conflictingLineMatchesDoNotInventWordAssociations() {
+        var second = new TextAnchors.Box(10, 50, 80, 70);
+        var anchors = TextAnchors.align("Alpha Beta Gamma", List.of(
+            new TextAnchors.Region("Alpha Beta", box), new TextAnchors.Region("Beta Gamma", second)));
+        assertTrue(TextAnchors.selected(anchors, 6, 10).isEmpty());
+        assertFalse(TextAnchors.selected(anchors, 0, 5).isEmpty());
+    }
 }

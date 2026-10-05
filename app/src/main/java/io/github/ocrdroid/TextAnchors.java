@@ -12,6 +12,7 @@ import java.util.regex.Pattern;
 /** UTF-16 offsets match Android's editable text and selection APIs. */
 public final class TextAnchors {
     private static final Pattern WORD = Pattern.compile("[\\p{L}\\p{N}]+(?:[.'\\u2019,-][\\p{L}\\p{N}]+)*");
+    private static final Pattern HTML_TAG = Pattern.compile("</?[A-Za-z][^>]*>");
 
     public static final class Box {
         public final float left, top, right, bottom;
@@ -42,8 +43,16 @@ public final class TextAnchors {
         Map<String, List<Anchor>> output = new HashMap<>();
         List<String> keys = new ArrayList<>();
         List<Anchor> spans = new ArrayList<>();
+        List<int[]> markup = new ArrayList<>();
+        Matcher tags = HTML_TAG.matcher(text);
+        while (tags.find()) markup.add(new int[]{tags.start(), tags.end()});
         Matcher words = WORD.matcher(text);
         while (words.find()) {
+            boolean inTag = false;
+            for (int[] tag : markup) {
+                if (words.start() >= tag[0] && words.end() <= tag[1]) { inTag = true; break; }
+            }
+            if (inTag) continue;
             String key = normalize(words.group());
             Anchor span = new Anchor(words.start(), words.end(), null);
             output.computeIfAbsent(key, ignored -> new ArrayList<>()).add(span);
@@ -88,6 +97,9 @@ public final class TextAnchors {
             Anchor span = entry.getValue().get(0);
             if (!grounded.contains(span.start)) anchors.add(new Anchor(span.start, span.end, boxes.get(0)));
         }
+        Map<Integer, Integer> counts = new HashMap<>();
+        for (Anchor anchor : anchors) counts.merge(anchor.start, 1, Integer::sum);
+        anchors.removeIf(anchor -> counts.get(anchor.start) > 1);
         return anchors;
     }
 

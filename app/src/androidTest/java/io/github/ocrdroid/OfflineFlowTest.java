@@ -81,7 +81,8 @@ public class OfflineFlowTest {
                 vm.busy.observe(activity, working -> { if (!working) saved.countDown(); });
             });
             assertTrue("Export did not finish", saved.await(15, java.util.concurrent.TimeUnit.SECONDS));
-            assertTrue(java.nio.file.Files.readString(exported.toPath()).contains("Edited 4729"));
+            assertTrue(new String(java.nio.file.Files.readAllBytes(exported.toPath()),
+                StandardCharsets.UTF_8).contains("Edited 4729"));
         }
         JSONObject evidence = new JSONObject();
         evidence.put("text", result.text);
