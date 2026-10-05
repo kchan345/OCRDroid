@@ -5,24 +5,27 @@ Offline Android 13 / API 33+ OCR using the Apache-2.0
 
 ## Downloads
 
-**Start with the APK and the Q4 model folder below.** These are artifacts from
-successful GitHub Actions runs, not the original Hugging Face weight files.
+**Start with the APK and the Q4 model folder below.** They are published in the
+[v0.1.0-preview release](https://github.com/kchan345/OCRDroid/releases/tag/v0.1.0-preview),
+built and verified by GitHub Actions. They are not the original Hugging Face
+weight files. Release downloads need no GitHub sign-in and do not expire.
 
 | Download | What it contains | When to use it |
 | --- | --- | --- |
-| [OCRDroid APK](https://github.com/kchan345/OCRDroid/actions/runs/37386109047/artifacts/11380016551) | ZIP containing `app-debug.apk` | Install this Android development preview |
-| [OvisOCR2 Q4 model folder](https://github.com/kchan345/OCRDroid/actions/runs/37384642611/artifacts/11376300436) | Q4_K_M language model, F16 vision projector, checksum manifest, license; approximately 734 MB | Recommended default |
-| [Optional BF16 model folder](https://github.com/kchan345/OCRDroid/actions/runs/37383883636/artifacts/11376168569) | BF16 language model with the same F16 vision projector and a manifest; approximately 1.72 GB | Higher-precision alternative with greater RAM/storage use |
+| [OCRDroid-preview.apk](https://github.com/kchan345/OCRDroid/releases/download/v0.1.0-preview/OCRDroid-preview.apk) | Debug-signed APK, approximately 53 MB | Install this Android development preview |
+| [ovisocr2-q4.zip](https://github.com/kchan345/OCRDroid/releases/download/v0.1.0-preview/ovisocr2-q4.zip) | Q4_K_M language model, F16 vision projector, checksum manifest, license; approximately 734 MB | Recommended default |
+| [ovisocr2-bf16.zip](https://github.com/kchan345/OCRDroid/releases/download/v0.1.0-preview/ovisocr2-bf16.zip) | BF16 language model with the same F16 vision projector and a manifest; approximately 1.72 GB | Optional higher-precision alternative with greater RAM/storage use |
+| [SHA256SUMS.txt](https://github.com/kchan345/OCRDroid/releases/download/v0.1.0-preview/SHA256SUMS.txt) | SHA-256 checksums for the release files | Verify downloads |
 
-GitHub Actions artifact downloads require signing into GitHub. If a direct link
-does not start a download, open its workflow run and select the named artifact
-in the **Artifacts** section. Model artifacts expire after 14 days and APK
-artifacts after 90 days. For a durable download, check the
-[Releases page](https://github.com/kchan345/OCRDroid/releases); preview publication
-is being finalized, so the verified Actions links above are the available
-downloads at this documentation revision.
+The release also includes `app-evidence.zip`, `bf16-evidence.zip`, and
+`MODEL-LICENSE.txt`. It was built from commit `d1db783` (app run
+[37387021973](https://github.com/kchan345/OCRDroid/actions/runs/37387021973),
+Q4 gate [37387021897](https://github.com/kchan345/OCRDroid/actions/runs/37387021897),
+BF16 run [37387022013](https://github.com/kchan345/OCRDroid/actions/runs/37387022013)).
 
-If a model artifact has expired, open
+For newer builds, Actions artifacts are a fallback. Downloading them requires
+signing into GitHub. Model artifacts expire after 14 days and APK artifacts
+after 90 days. To get one, open
 [Android inference gate](https://github.com/kchan345/OCRDroid/actions/workflows/inference.yml),
 choose a recent successful run, and download **ovisocr2-q4**. A repository
 maintainer can select **Run workflow** on `main` to regenerate it. The
@@ -48,10 +51,10 @@ quantizes those weights in GitHub Actions.
 
 ## Run the application
 
-1. Download the APK artifact above, extract `app-debug.apk`, and open it on the
-   phone. Android may ask you to allow installation from the browser or file
-   manager. This is a debug-signed development preview, not a Play Store release.
-2. Download the **Q4 model folder** ZIP and extract it to a dedicated directory
+1. Download `OCRDroid-preview.apk` above and open it on the phone. Android may
+   ask you to allow installation from the browser or file manager. This is a
+   debug-signed development preview, not a Play Store release.
+2. Download `ovisocr2-q4.zip` and extract it to a dedicated directory
    such as `Documents > OvisOCR2-Q4`. Select **Import model folder** in OCRDroid
    and choose that directory, not the ZIP or an individual GGUF file.
    The app verifies the pinned revision, sizes, GGUF headers, and SHA-256 hashes,
@@ -97,7 +100,7 @@ the app is uninstalled.
 
 | Symptom | What to do |
 | --- | --- |
-| No model download appears | Sign into GitHub, open the linked successful workflow run, and use its **Artifacts** section |
+| No model download appears | Use the release links above. For Actions artifacts, sign into GitHub and use the run's **Artifacts** section |
 | Folder needs `manifest.json` | Extract the complete model ZIP and select the directory containing the files, not its parent |
 | Incompatible manifest or checksum mismatch | Download the matching APK and complete model bundle again; do not mix Q4/BF16 manifests or edit filenames |
 | Not enough internal storage | Allow space for the app-private copy as well as the archive/extracted files; use Q4 rather than BF16 |
