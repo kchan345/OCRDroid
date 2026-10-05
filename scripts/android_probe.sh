@@ -18,8 +18,7 @@ adb shell chmod 755 "$remote/ocr-probe"
 adb shell getprop > results/device-properties.txt
 adb shell cat /proc/meminfo > results/meminfo.txt
 if [[ "${PHYSICAL_DEVICE:-0}" != 1 ]]; then
-  adb shell svc wifi disable
-  adb shell svc data disable
+  bash scripts/emulator_offline.sh
 fi
 for name in receipt note; do
   timeout 900 adb shell "$remote/ocr-probe $remote/$model $remote/mmproj-f16.gguf $remote/$name.png $remote/$name.txt $remote/$name.json" 2>&1 | tee "results/$name.log"

@@ -2,7 +2,7 @@ name: Build and exercise OCR app
 on:
   push:
     branches: [main]
-    paths: ['app/**', '*.gradle', 'gradle.properties', 'native/jni.cpp', 'scripts/app_test.sh', '.github/workflows/app.yml']
+    paths: ['app/**', '*.gradle', 'gradle.properties', 'native/jni.cpp', 'scripts/app_test.sh', 'scripts/emulator_offline.sh', '.github/workflows/app.yml']
   workflow_dispatch:
     inputs:
       inference_run_id:

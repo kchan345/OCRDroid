@@ -56,6 +56,16 @@ public class OfflineFlowTest {
                 DocumentView preview = activity.findViewById(R.id.preview);
                 editor.setSelection(invoice, invoice + 7);
                 assertTrue(preview.highlightedRegionCount() > 0);
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            Bitmap screenshot = InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
+            assertNotNull(screenshot);
+            ImageFiles.write(screenshot, new File(context.getFilesDir(), "selection-preview.png"));
+            screenshot.recycle();
+            scenario.onActivity(activity -> {
+                OcrViewModel vm = new ViewModelProvider(activity).get(OcrViewModel.class);
+                SelectionEditor editor = activity.findViewById(R.id.editor);
+                DocumentView preview = activity.findViewById(R.id.preview);
                 editor.getText().replace(invoice, invoice + 7, "Edited");
                 editor.setSelection(invoice, invoice + 6);
                 assertEquals(0, preview.highlightedRegionCount());
