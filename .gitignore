@@ -1,0 +1,10 @@
+.reference/
+.gradle/
+**/build/
+local.properties
+models/
+artifacts/
+__pycache__/
+*.apk
+*.gguf
+*.safetensors

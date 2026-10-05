@@ -1,0 +1,120 @@
+name: Android inference gate
+on:
+  push:
+    branches: [main]
+    paths: ['native/**', 'scripts/**', 'runtime.lock.json', '.github/workflows/inference.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  models:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read pins
+        run: echo "LLAMA_REV=$(jq -r .llama_revision runtime.lock.json)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: ${{ env.LLAMA_REV }}
+          path: vendor/llama.cpp
+      - uses: actions/cache@v4
+        id: models
+        with:
+          path: |
+            models/model-q4_k_m.gguf
+            models/mmproj-f16.gguf
+            models/manifest.json
+            models/LICENSE
+          key: ovis-models-${{ hashFiles('runtime.lock.json', 'scripts/prepare_models.py') }}
+      - name: Convert and quantize original OvisOCR2 weights
+        if: steps.models.outputs.cache-hit != 'true'
+        run: |
+          pip install -r vendor/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
+          cmake -S vendor/llama.cpp -B build-host -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_SERVER=OFF -DLLAMA_BUILD_APP=OFF
+          cmake --build build-host --target llama-quantize -j 4
+          python scripts/prepare_models.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ovisocr2-q4
+          path: |
+            models/model-q4_k_m.gguf
+            models/mmproj-f16.gguf
+            models/manifest.json
+            models/LICENSE
+          compression-level: 0
+          retention-days: 14
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        abi: [arm64-v8a, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read pins
+        run: echo "LLAMA_REV=$(jq -r .llama_revision runtime.lock.json)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: ${{ env.LLAMA_REV }}
+          path: vendor/llama.cpp
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "ndk;27.2.12479018"
+      - name: Cross-compile API 33 native inference
+        run: |
+          cmake -S native -B build-android -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_SOURCE_DIR="$PWD/vendor/llama.cpp" \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/27.2.12479018/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=${{ matrix.abi }} -DANDROID_PLATFORM=android-33 -DANDROID_STL=c++_static
+          cmake --build build-android --target ocr-probe -j 4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: probe-${{ matrix.abi }}
+          path: build-android/ocr-probe
+  android:
+    needs: [models, native]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ovisocr2-q4
+          path: models
+      - uses: actions/download-artifact@v4
+        with:
+          name: probe-x86_64
+          path: build-android
+      - run: pip install Pillow==11.3.0 && python scripts/make_fixtures.py
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          arch: x86_64
+          ram-size: 4096M
+          disk-size: 6000M
+          heap-size: 512M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -cores 2
+          script: bash scripts/android_probe.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-inference-evidence
+          path: |
+            results/
+            fixtures/

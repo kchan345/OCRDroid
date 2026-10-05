@@ -1,0 +1,8 @@
+{
+  "llama_repository": "https://github.com/ggml-org/llama.cpp.git",
+  "llama_revision": "7049ff0cbeb1f5ead231de4522af6b75d8d773c0",
+  "model_repository": "ATH-MaaS/OvisOCR2",
+  "model_revision": "1fc9221b7823a371d6e97f92d527cc847e24e107",
+  "quantization": "Q4_K_M",
+  "projector_type": "f16"
+}
