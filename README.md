@@ -3,14 +3,57 @@
 Offline Android 13 / API 33+ OCR using the Apache-2.0
 [ATH-MaaS/OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2) 0.8B model.
 
+## Downloads
+
+**Start with the APK and the Q4 model folder below.** These are artifacts from
+successful GitHub Actions runs, not the original Hugging Face weight files.
+
+| Download | What it contains | When to use it |
+| --- | --- | --- |
+| [OCRDroid APK](https://github.com/kchan345/OCRDroid/actions/runs/37386109047/artifacts/11380016551) | ZIP containing `app-debug.apk` | Install this Android development preview |
+| [OvisOCR2 Q4 model folder](https://github.com/kchan345/OCRDroid/actions/runs/37384642611/artifacts/11376300436) | Q4_K_M language model, F16 vision projector, checksum manifest, license; approximately 734 MB | Recommended default |
+| [Optional BF16 model folder](https://github.com/kchan345/OCRDroid/actions/runs/37383883636/artifacts/11376168569) | BF16 language model with the same F16 vision projector and a manifest; approximately 1.72 GB | Higher-precision alternative with greater RAM/storage use |
+
+GitHub Actions artifact downloads require signing into GitHub. If a direct link
+does not start a download, open its workflow run and select the named artifact
+in the **Artifacts** section. Model artifacts expire after 14 days and APK
+artifacts after 90 days. For a durable download, check the
+[Releases page](https://github.com/kchan345/OCRDroid/releases); preview publication
+is being finalized, so the verified Actions links above are the available
+downloads at this documentation revision.
+
+If a model artifact has expired, open
+[Android inference gate](https://github.com/kchan345/OCRDroid/actions/workflows/inference.yml),
+choose a recent successful run, and download **ovisocr2-q4**. A repository
+maintainer can select **Run workflow** on `main` to regenerate it. The
+[BF16 export workflow](https://github.com/kchan345/OCRDroid/actions/workflows/bf16.yml)
+provides **ovisocr2-bf16**. Use an APK and model bundle with matching pinned
+revisions; the app rejects incompatible manifests.
+
+The [upstream Hugging Face repository](https://huggingface.co/ATH-MaaS/OvisOCR2)
+is the source of the original open weights, **not an Android-ready Q4 download**.
+Do not import its `model.safetensors` file directly. This project converts and
+quantizes those weights in GitHub Actions.
+
+## Requirements
+
+- Android 13 / API 33 or newer, with an ARM64 phone; x86_64 is included for emulators.
+- More than 6 GB device RAM is recommended. Actual ARM64 phone performance is
+  still unverified; current execution evidence is from Android emulators.
+- Enough storage for the downloaded archive, extracted folder, and the app's
+  private model copy. The two Q4 GGUF files total approximately 734 MB, so keeping
+  all three copies can use roughly 2.2 GB before other files. BF16 needs more.
+- A camera app for camera capture, or an existing photo. No local Android SDK,
+  model-conversion tools, or command-line installation is required to use the APK.
+
 ## Run the application
 
-1. Install the preview APK from a successful `Build and exercise OCR app` run
-   (or the repository's preview release). It supports arm64-v8a phones and
-   x86_64 emulators on Android 13 or later. The preview is debug-signed, not a
-   Play Store production release.
-2. Download and extract `ovisocr2-q4` on the phone. Select **Import model folder**
-   and choose the directory containing `manifest.json` and both GGUF files.
+1. Download the APK artifact above, extract `app-debug.apk`, and open it on the
+   phone. Android may ask you to allow installation from the browser or file
+   manager. This is a debug-signed development preview, not a Play Store release.
+2. Download the **Q4 model folder** ZIP and extract it to a dedicated directory
+   such as `Documents > OvisOCR2-Q4`. Select **Import model folder** in OCRDroid
+   and choose that directory, not the ZIP or an individual GGUF file.
    The app verifies the pinned revision, sizes, GGUF headers, and SHA-256 hashes,
    then copies the weights into private storage. Allow space for both the
    downloaded folder and the private copy.
@@ -21,6 +64,27 @@ Offline Android 13 / API 33+ OCR using the Apache-2.0
    image regions. Choose the appropriate **Highlight language** before running
    OCR. **Save text** exports UTF-8 text to a user-selected destination.
 
+The selected Q4 directory must contain these files directly, not inside another
+nested directory:
+
+```text
+OvisOCR2-Q4
+  manifest.json
+  model-q4_k_m.gguf
+  mmproj-f16.gguf
+  LICENSE
+```
+
+For the optional BF16 bundle, the language file is `model-bf16.gguf` instead.
+Keep its own `manifest.json`; do not rename a weight file or mix files between
+bundles. Importing BF16 selects that precision automatically. Import both bundles
+if you want to switch between them with the **Model precision** selector.
+
+Choose an extracted subfolder rather than the storage root or the top-level
+Downloads directory, which Android may prevent the folder picker from granting.
+After successful import, OCR no longer depends on the downloaded folder. Keep a
+copy elsewhere if you want to reinstall without downloading again.
+
 There is no INTERNET permission in the installed app, no server inference, no
 model download at runtime, and no broad photo-library permission. Captures use an
 external camera app and a narrowly scoped FileProvider URI. Model folders use
@@ -28,6 +92,23 @@ Android's Storage Access Framework. The app retains edits through rotation;
 save text before closing it because drafts are not persisted across process death.
 The photo and imported weights remain in private app storage until replaced or
 the app is uninstalled.
+
+## Common issues
+
+| Symptom | What to do |
+| --- | --- |
+| No model download appears | Sign into GitHub, open the linked successful workflow run, and use its **Artifacts** section |
+| Folder needs `manifest.json` | Extract the complete model ZIP and select the directory containing the files, not its parent |
+| Incompatible manifest or checksum mismatch | Download the matching APK and complete model bundle again; do not mix Q4/BF16 manifests or edit filenames |
+| Not enough internal storage | Allow space for the app-private copy as well as the archive/extracted files; use Q4 rather than BF16 |
+| OCR is slow | Keep the app visible and start with a clear, small crop. The preview uses CPU inference; emulator timings are not phone speed predictions |
+| Output is incomplete | The 2048-token output limit was reached. Crop or split the page in a photo editor and import the smaller image |
+| Selected text does not highlight | Choose the correct highlight language before OCR. Edited, ambiguous, unmatched, or unsupported-script text may have no reliable region |
+| Edits disappeared after closing the app | Drafts survive rotation, not process death. Use **Save text** before closing |
+| A later preview will not install over this one | CI debug signing keys can differ between builds. Export text and retain your model folders before uninstalling/reinstalling |
+
+See [architecture.md](architecture.md) for implementation details, design
+decisions, and the limits of the current validation.
 
 ## Verified Android inference
 

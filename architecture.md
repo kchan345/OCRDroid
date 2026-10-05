@@ -1,0 +1,278 @@
+# OCRDroid architecture
+
+## Scope and current acceptance boundary
+
+OCRDroid is an Android API 33+ application that transcribes a single image
+locally using the open-weight **ATH-MaaS/OvisOCR2** model. The default deployment
+uses a Q4_K_M language model and an F16 vision encoder/projector. A BF16 language
+model is an optional, user-imported alternative.
+
+Actual Q4 and BF16 generation has passed on Android API 33 x86_64 emulators.
+Both ARM64 and x86_64 native binaries compile, and the APK's offline import,
+inference, localization, editing, rotation, and export flow has passed Android
+instrumentation. **Physical ARM64 performance, thermals, battery use, and
+reliability on a phone with more than 6 GB RAM remain unverified.** There is no
+registered device runner. Compiling ARM64 is not treated as executing on ARM64.
+
+Download and installation instructions are in [README.md](README.md).
+
+## Runtime data flow
+
+```mermaid
+flowchart TD
+    Camera[External camera app] --> URI[Content URI]
+    Photos[Android photo picker] --> URI
+    URI --> Normalize[ImageDecoder: orientation, sRGB, bounded size, white background]
+    Normalize --> Page[Normalized bitmap and private page.png]
+    Folder[User-selected model folder] --> Store[ModelStore: validate and copy]
+    Store --> Weights[Private GGUF files]
+    Page --> JNI[OcrEngine JNI]
+    Weights --> JNI
+    JNI --> Vision[llama.cpp mtmd vision encoder/projector]
+    Vision --> Decoder[Qwen3.5 decoder with OvisOCR2 weights]
+    Decoder --> Text[Generated OCR text]
+    Page --> Localizer[Bundled offline ML Kit localizer]
+    Text --> Align[Conservative text-to-region alignment]
+    Localizer --> Align
+    Align --> Editor[Plain-text editor and UTF-16 anchors]
+    Editor --> Overlay[Selection highlights on the same normalized image]
+    Editor --> Export[User-selected UTF-8 text destination]
+```
+
+OvisOCR2 produces all displayed transcription. ML Kit's recognized text is used
+only to align source-image regions; it does not replace or silently correct the
+OvisOCR2 result. There is no HTTP inference service or Python runtime inside the
+APK, and the merged application manifest explicitly removes INTERNET permission.
+
+## Components
+
+| Component | Responsibility |
+| --- | --- |
+| `MainActivity` | Camera/photo/folder contracts, model and language selection, controls, selection callbacks, responsive image/editor layout |
+| `OcrViewModel` | Retained UI state, serialized worker execution, progress/error messages, cancellation, and export |
+| `ImageFiles` | Content-URI decoding, EXIF orientation, sRGB conversion, longest-edge limit of 2048 pixels, transparency compositing, PNG normalization |
+| `ModelStore` | Manifest validation, size/storage checks, SHA-256 verification, GGUF headers, private weight copies, per-precision selection |
+| `OcrEngine` and `native\jni.cpp` | Java/native boundary, cancellation flag, native error propagation, UTF-8 result transfer |
+| `native\ocr.cpp` | Shared CPU inference implementation: model load, vision processing, prompt evaluation, greedy decoding, truncation and memory/time reporting |
+| `native\probe.cpp` | Standalone Android executable using the same inference core; emits text and metrics for CI |
+| `Localizer` | Runs the selected bundled ML Kit script recognizer on the normalized bitmap and obtains line rectangles |
+| `TextAnchors` | Aligns generated text to line rectangles and maintains UTF-16 offsets through edits |
+| `DocumentView` | Fits the normalized image to the view and applies the same scale/translation to highlighted rectangles |
+| `SelectionEditor` | Reports selection changes from the editable plain-text field |
+
+The sources live under `app\src\main\java\io\github\ocrdroid` and `native`.
+Tests are under `app\src\test`, `app\src\androidTest`, and `scripts`.
+
+## Model preparation and compatibility
+
+### Pinned inputs
+
+`runtime.lock.json` records the exact Hugging Face model revision, llama.cpp
+commit, default quantization, projector format, and MTP exclusion. The exporter
+downloads that revision rather than silently following the model's latest files.
+The application embeds the model/runtime revision identifiers in `BuildConfig`.
+
+The model architecture is `Qwen3_5ForConditionalGeneration`, not an older
+Ovis-specific Android runtime. llama.cpp supports its language architecture and
+the corresponding vision processing through `mtmd`. This avoids embedding the
+publisher's server-oriented vLLM/Python stack on a phone.
+
+### Conversion pipeline
+
+```text
+Pinned OvisOCR2 Hugging Face weights
+  -> language GGUF in BF16, with --no-mtp
+  -> optional Q4_K_M quantization of the language GGUF
+  -> matching vision encoder/projector GGUF in F16
+  -> manifest with revision pins, filenames, byte sizes and SHA-256 hashes
+  -> downloadable folder ZIP, including the model license
+```
+
+The inherited model configuration advertises an MTP/speculative draft layer
+whose tensors are absent from the published checkpoint. Without `--no-mtp`, the
+converted metadata causes llama.cpp to look for missing `blk.24` tensors.
+Excluding the unused speculative head fixes loading without changing the
+ordinary OCR decoder or patching upstream runtime code.
+
+Q4_K_M is a **mixed 4-bit quantization scheme**, not a guarantee that every tensor
+has exactly four bits. The vision encoder/projector remains F16 in both profiles.
+Consequently, the optional "BF16" setting means BF16 language weights plus an F16
+vision component, not an entirely BF16 pipeline.
+
+Raw `model.safetensors` folders are not accepted by the application. Conversion
+happens in GitHub Actions; the phone only imports prepared GGUF bundles.
+
+### Import and storage contract
+
+A bundle contains `manifest.json`, the selected language GGUF, `mmproj-f16.gguf`,
+and the model license. Import checks the supported format version, OvisOCR2
+identity, pinned revisions, MTP exclusion, allowed precision/filenames, declared
+sizes, checksums, and GGUF magic bytes.
+
+Weights are streamed into a newly created private directory and the selected
+bundle is updated only after verification. Reimporting a precision replaces its
+previous private copy; Q4 and BF16 can coexist. The app does not memory-map a
+Storage Access Framework URI directly.
+
+This costs extra disk space and a one-time copy/hash pass, but avoids dependence
+on a document provider remaining mounted, persistent URI grants, or providers
+that cannot supply a suitable seekable file for native memory mapping. Import
+hashes establish integrity against the supplied manifest, not independent proof
+that an arbitrary third-party manifest is authentic. Use the project's verified
+downloads.
+
+## Inference execution
+
+| Setting | Current value | Reason / limitation |
+| --- | --- | --- |
+| Minimum Android API | 33 | Matches the requested Android baseline and modern system pickers |
+| Packaged ABIs | arm64-v8a and x86_64 | Phone target plus emulator coverage; no 32-bit Android |
+| Execution backend | CPU | Portable baseline without vendor-specific GPU/NPU integration |
+| Language model loading | Memory-mapped GGUF | Avoids an unnecessary full Java-heap weight copy |
+| CPU threads | Up to 4 | Bounds CPU parallelism; no hardware-specific tuning has been established |
+| Context length | 4096 tokens | Bounds native context memory |
+| Logical/micro batch | 256 / 256 | Bounded prompt-processing profile |
+| Vision token budget | 196 minimum, 1024 maximum | Bounds image encoding cost; limits dense-page detail |
+| App output limit | 2048 tokens | Bounds generation; hitting the limit is shown as incomplete output |
+| Probe output limit | 256 tokens | Sufficient for the two short smoke fixtures, not equivalent to a long-page workload |
+| Sampling | Greedy | Repeatable basic OCR checks |
+| Thinking | Disabled in the pinned model's chat template | Uses the publisher's OCR-style non-thinking prompt |
+
+The original model's server example permits much larger images and up to 16384
+output tokens. The mobile profile intentionally does not promise equivalent
+dense-page accuracy or full-page output length. Crop or split difficult pages
+before import; the app does not yet provide its own crop editor.
+
+Inference runs outside the main thread. A process-wide worker serializes app
+operations, and a native mutex rejects concurrent inference. Native model and
+context ownership uses RAII and is released after each request. This limits
+retained RAM, but subsequent photos pay model-loading overhead again. The app
+returns a completed result rather than streaming partial tokens.
+
+JNI transfers generated text as UTF-8 bytes rather than relying on JNI modified
+UTF-8 string handling. Java then decodes the bytes, while editor offsets remain
+UTF-16, matching Android's text APIs.
+
+Cancellation is checked during loading and generation and is connected to the
+language runtime's abort callback. A vision encode may finish its current native
+operation before cancellation takes effect. Errors and cancellations are reported
+explicitly; they are not returned as an empty successful OCR result.
+
+## Why text highlighting needs a separate localizer
+
+OvisOCR2's documented output is Markdown with formulas, HTML tables, and optional
+**visual-region** image boxes. Those boxes locate illustrations/charts, not the
+words in the transcription. Treating them as word coordinates would give
+misleading highlights.
+
+The current solution bundles ML Kit recognizers for Latin, Chinese, Japanese,
+Korean, and Devanagari. Bundling makes localization available offline on first
+use; the app does not depend on a later model download. The trade-off is extra
+APK content and a separately Google-licensed component. The complete application
+is therefore not an exclusively open-weight OCR stack, even though transcription
+always uses open-weight OvisOCR2.
+
+An alternative would be an open-weight detector/recognizer with its own mobile
+runtime and export pipeline. That would remove the proprietary localization
+dependency, but add another model port, accuracy/alignment evaluation, and
+deployment surface. Re-running OvisOCR2 over many crops is another possible
+approach, but would multiply inference work and is not implemented.
+
+### Alignment rules
+
+1. Tokenize OCR output and localizer lines with normalization for matching, while
+   retaining original UTF-16 output offsets. Ignore HTML tag metadata.
+2. Match unique complete line-token sequences. This can disambiguate common words
+   using their surrounding line content.
+3. For remaining text, match only words that occur unambiguously on both sides.
+4. Remove conflicting source associations. Do not guess coordinates for ambiguous
+   duplicates or unmatched text.
+5. Highlight overlapping anchors when the user selects a text range.
+
+The rectangles are **line-level regions**, even for selection of a single word.
+Edited words lose their anchors; unaffected offsets shift with the edit.
+Insertions/deletions at word boundaries are handled conservatively. Some
+unchanged words near an edit can therefore lose highlighting rather than retain
+an unreliable association.
+
+The UI identifies unlocatable selections. It is possible for OvisOCR2 to
+transcribe a script that the selected localizer cannot ground. Highlight coverage
+is not a confidence score or a guarantee that the transcription is correct.
+
+## UI state, privacy, and lifecycle
+
+- Camera capture delegates to an installed camera app through a narrowly scoped
+  FileProvider URI. Photo selection uses Android's system picker, not broad media
+  library access.
+- The same normalized image is used for inference, localization, and rendering.
+  This avoids applying source-image boxes to a separately rotated/scaled preview.
+- The view model retains the bitmap, edited text, anchors, and settings through
+  activity recreation. The editor's automatic text restoration is disabled so it
+  cannot replay a full-text edit and invalidate retained anchors during rotation.
+- Draft text is not restored after process death. **Save text** writes UTF-8 to a
+  user-selected document destination. This is explicit export, not automatic
+  cloud synchronization.
+- Model files and the normalized photo are stored privately. Backup and device
+  transfer exclusions are declared. Keeping the original downloaded model folder
+  is the user's choice.
+- The app keeps the screen awake while a visible operation runs. It has no
+  foreground service or guarantee that Android will preserve background work.
+- No INTERNET permission is granted to the application. External camera apps,
+  keyboards, and document providers have their own permissions and behavior;
+  this app's manifest cannot control those other applications.
+
+## Build, test, and publication pipeline
+
+All SDK/NDK installation, Gradle builds, Python dependencies, model preparation,
+and test execution occur on GitHub runners. The local Windows workstation does
+not need additional tools or SDKs. Remote commits and release assets also avoid
+relying solely on a workstation whose unified write filter may discard changes.
+
+| Workflow | Acceptance responsibility |
+| --- | --- |
+| `inference.yml` | Prepare Q4 weights, compile both Android ABIs, run two image-conditioned native probes on API 33, verify expected phrases, non-truncation, positive token count, and peak RSS below 3.5 GiB |
+| `app.yml` | Require a successful gate with matching native core/model pins; run unit tests and lint; build the APK; execute actual SAF import, JNI inference, localizer alignment, selection/edit/rotation/export, cancellation and image-normalization checks |
+| `bf16.yml` | Export the optional BF16 language bundle and repeat native Android OCR checks with a compatible probe |
+| `device.yml` | Run acceptance on a supplied, dedicated ARM64 phone connected to a preconfigured GitHub runner |
+| `release.yml` | Publish a successful app artifact and its model provenance as a prerelease, optionally including verified BF16 weights, evidence, licenses, and SHA-256 checksums |
+
+The shared native probe is important: a cross-compilation success or an APK that
+only displays a UI cannot establish that the model actually executes.
+Conversely, the probe alone cannot establish that SAF, JNI, localization, or
+editing works inside the Android app, so there is a separate integration gate.
+
+The emulator isolation helper disables airplane-mode radios and the emulator's
+separate Ethernet interface, then records the remaining active interfaces.
+Earlier radio-only emulator measurements are retained as historical evidence;
+they should not be confused with this stricter network-isolation check. The app
+also asserts that INTERNET permission is absent.
+
+The physical-device workflow requires an existing Linux runner labeled
+`android-device`, one authorized non-emulator ARM64 device, API 33+, reported
+memory above 6,000,000 KiB, and airplane mode with Wi-Fi already disabled. It
+does not provision a phone or install Android tools on the local workstation.
+
+The preview APK is debug-signed. This avoids inventing or storing a production
+signing identity, but is not a Play Store release process. Different CI debug
+keys may prevent upgrading in place; users should export text and retain model
+folders before uninstalling an older preview.
+
+## Evidence and what is not yet established
+
+The README links measured Q4/BF16 runs and downloadable artifacts. The fixtures
+are two clean synthetic images with a small amount of text. Passing them proves
+basic image-conditioned Android execution, not general document quality.
+
+Outstanding validation includes:
+
+- Real ARM64 phone execution, peak memory under device pressure, latency, battery
+  use, thermal throttling, and repeated-use stability.
+- Dense pages, long outputs, difficult photography, multilingual accuracy, tables,
+  formulas, and the quality difference between Q4 and BF16.
+- Quantitative highlight coverage and correctness beyond the integration fixtures.
+- Real camera-app and manufacturer-specific file-provider behavior.
+- Production signing/distribution, background-work resilience, and persistent
+  draft management.
+
+These are explicit limits of the preview, not capabilities inferred from a
+successful emulator run.
