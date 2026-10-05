@@ -76,7 +76,7 @@ public final class OcrViewModel extends AndroidViewModel {
                     status.setValue(message(R.string.model_ready, precision));
                 });
             } catch (IOException | org.json.JSONException | java.security.NoSuchAlgorithmException |
-                     SecurityException error) { fail(error); }
+                     SecurityException | IllegalArgumentException error) { fail(error); }
         });
     }
 
@@ -145,6 +145,8 @@ public final class OcrViewModel extends AndroidViewModel {
         OcrEngine.nativeCancel();
         status.setValue(message(R.string.cancel_pending));
     }
+
+    public boolean canCancel() { return recognizing; }
 
     public void edit(String value, int start, int removed, int inserted) {
         anchors = TextAnchors.edit(anchors, start, removed, inserted);

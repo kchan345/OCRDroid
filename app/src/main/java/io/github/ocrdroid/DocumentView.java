@@ -14,6 +14,7 @@ public final class DocumentView extends View {
     private Bitmap image;
     private List<TextAnchors.Box> boxes = Collections.emptyList();
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final RectF region = new RectF();
 
     public DocumentView(Context context) {
         super(context);
@@ -38,14 +39,14 @@ public final class DocumentView extends View {
         paint.setStyle(Paint.Style.FILL);
         canvas.drawBitmap(image, 0, 0, paint);
         for (TextAnchors.Box box : boxes) {
-            RectF rect = new RectF(box.left, box.top, box.right, box.bottom);
+            region.set(box.left, box.top, box.right, box.bottom);
             paint.setColor(0x66FFD43B);
             paint.setStyle(Paint.Style.FILL);
-            canvas.drawRect(rect, paint);
+            canvas.drawRect(region, paint);
             paint.setColor(0xFFAD6700);
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(2 / scale);
-            canvas.drawRect(rect, paint);
+            canvas.drawRect(region, paint);
         }
         canvas.restore();
     }

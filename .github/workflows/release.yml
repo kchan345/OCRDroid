@@ -1,0 +1,86 @@
+name: Publish verified preview
+on:
+  workflow_dispatch:
+    inputs:
+      app_run_id:
+        description: Successful Build and exercise OCR app run
+        type: string
+        required: true
+      tag:
+        description: New prerelease tag
+        type: string
+        default: v0.1.0-preview
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      APP_RUN: ${{ inputs.app_run_id }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate successful app provenance
+        run: |
+          set -euo pipefail
+          [[ "$APP_RUN" =~ ^[0-9]+$ ]]
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-preview([.][0-9]+)?$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$APP_RUN" > app-run.json
+          test "$(jq -r .conclusion app-run.json)" = success
+          test "$(jq -r .path app-run.json)" = .github/workflows/app.yml
+          echo "APP_SHA=$(jq -r .head_sha app-run.json)" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: OCRDroid-apk
+          path: apk
+          run-id: ${{ inputs.app_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-evidence
+          path: evidence
+          run-id: ${{ inputs.app_run_id }}
+          github-token: ${{ github.token }}
+      - name: Resolve exact model gate
+        run: |
+          set -euo pipefail
+          test -s evidence/results/app-evidence.json
+          test "$(jq -r .conclusion evidence/results/inference-gate.json)" = success
+          echo "GATE_RUN=$(jq -r .id evidence/results/inference-gate.json)" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ovisocr2-q4
+          path: models
+          run-id: ${{ env.GATE_RUN }}
+          github-token: ${{ github.token }}
+      - name: Package tested APK, model folder and evidence
+        run: |
+          mkdir -p release
+          cp apk/app-debug.apk release/OCRDroid-preview.apk
+          (cd models && zip -0 -q ../release/ovisocr2-q4.zip ./*)
+          (cd evidence && zip -q -r ../release/app-evidence.zip results)
+          cp models/LICENSE release/MODEL-LICENSE.txt
+          (cd release && sha256sum OCRDroid-preview.apk ovisocr2-q4.zip app-evidence.zip > SHA256SUMS.txt)
+          cat > release-notes.txt <<EOF
+          Offline OvisOCR2 Q4 OCR for Android API 33+, with camera/photo input, plain-text editing and best-effort text-region highlights.
+
+          Install OCRDroid-preview.apk. Download/extract ovisocr2-q4.zip on the phone, then use Import model folder. Keep Q4_K_M selected.
+
+          This is a debug-signed development preview. Android emulator inference and app integration passed; performance and reliability on a physical ARM64 phone with more than 6 GB RAM remain unverified because no device runner is available. Highlights use separately licensed bundled ML Kit localization. The APK has no INTERNET permission.
+
+          App evidence: https://github.com/$GITHUB_REPOSITORY/actions/runs/$APP_RUN
+          Native model gate: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GATE_RUN
+          Source commit: $APP_SHA
+
+          BF16 GGUF folders can be exported with the optional BF16 workflow and imported separately. Raw safetensors are not accepted.
+          EOF
+          gh release create "$TAG" --draft --prerelease --target "$APP_SHA" \
+            --title "OCRDroid $TAG" --notes-file release-notes.txt
+          gh release upload "$TAG" release/*
+          gh release edit "$TAG" --draft=false

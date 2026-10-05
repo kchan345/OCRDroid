@@ -47,6 +47,7 @@ android {
 
 dependencies {
     implementation 'androidx.activity:activity:1.10.1'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.lifecycle:lifecycle-viewmodel:2.8.7'
     implementation 'androidx.lifecycle:lifecycle-livedata:2.8.7'
     implementation 'androidx.documentfile:documentfile:1.0.1'
@@ -61,3 +62,14 @@ dependencies {
     androidTestImplementation 'androidx.test:rules:1.6.1'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
 }
+
+def licenseAssets = layout.buildDirectory.dir('generated/licenseAssets')
+android.sourceSets.main.assets.srcDir(licenseAssets)
+tasks.register('syncRuntimeNotices', Copy) {
+    from(rootProject.file('vendor/llama.cpp')) {
+        include 'LICENSE', 'vendor/**/LICENSE*'
+        include 'vendor/sheredom/subprocess.h'
+    }
+    into(licenseAssets.map { it.dir('third_party/llama.cpp') })
+}
+tasks.named('preBuild').configure { dependsOn 'syncRuntimeNotices' }

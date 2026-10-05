@@ -18,19 +18,20 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
-import androidx.activity.ComponentActivity;
+import androidx.appcompat.app.AppCompatActivity;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.core.content.FileProvider;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowCompat;
 import androidx.lifecycle.ViewModelProvider;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class MainActivity extends ComponentActivity {
+public final class MainActivity extends AppCompatActivity {
     private OcrViewModel model;
     private DocumentView preview;
     private SelectionEditor editor;
@@ -40,6 +41,7 @@ public final class MainActivity extends ComponentActivity {
     private boolean rendering;
     private Uri cameraUri;
     private final List<View> controls = new ArrayList<>();
+    private final List<View> compactable = new ArrayList<>();
 
     private final ActivityResultLauncher<Uri> folder = registerForActivityResult(
         new ActivityResultContracts.OpenDocumentTree(), uri -> { if (uri != null) model.importModel(uri); });
@@ -56,6 +58,9 @@ public final class MainActivity extends ComponentActivity {
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING |
+            WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         model = new ViewModelProvider(this).get(OcrViewModel.class);
         if (saved != null && saved.getString("camera") != null) cameraUri = Uri.parse(saved.getString("camera"));
         LinearLayout root = new LinearLayout(this);
@@ -65,16 +70,22 @@ public final class MainActivity extends ComponentActivity {
             androidx.core.graphics.Insets bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.ime());
             view.setPadding(dp(16) + bars.left, dp(8) + bars.top, dp(16) + bars.right, dp(8) + bars.bottom);
+            boolean editing = insets.isVisible(WindowInsetsCompat.Type.ime());
+            for (View item : compactable) item.setVisibility(editing ? View.GONE : View.VISIBLE);
             return insets;
         });
         TextView title = label(R.string.app_name, 25);
         title.setTextColor(Color.rgb(18, 91, 81));
         root.addView(title);
-        root.addView(label(R.string.tagline, 14));
+        compactable.add(title);
+        TextView tagline = label(R.string.tagline, 14);
+        root.addView(tagline);
+        compactable.add(tagline);
         ScrollView settings = new ScrollView(this);
         LinearLayout settingsBody = column();
         settings.addView(settingsBody);
         root.addView(settings, new LinearLayout.LayoutParams(-1, dp(160)));
+        compactable.add(settings);
         settingsBody.addView(label(R.string.device_warning, 12));
         ActivityManager.MemoryInfo info = new ActivityManager.MemoryInfo();
         getSystemService(ActivityManager.class).getMemoryInfo(info);
@@ -94,6 +105,7 @@ public final class MainActivity extends ComponentActivity {
             new androidx.activity.result.PickVisualMediaRequest.Builder()
                 .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly.INSTANCE).build())), weighted());
         root.addView(inputs);
+        compactable.add(inputs);
         preview = new DocumentView(this);
         preview.setId(R.id.preview);
         root.addView(preview, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -106,10 +118,12 @@ public final class MainActivity extends ComponentActivity {
         cancel.setEnabled(false);
         actions.addView(cancel);
         root.addView(actions);
+        compactable.add(actions);
         status = label(R.string.ready, 13);
         status.setMaxLines(4);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         root.addView(status);
+        compactable.add(status);
         editor = new SelectionEditor(this);
         editor.setId(R.id.editor);
         editor.setGravity(Gravity.TOP | Gravity.START);
@@ -137,7 +151,7 @@ public final class MainActivity extends ComponentActivity {
         model.status.observe(this, value -> status.setText(value));
         model.busy.observe(this, working -> {
             for (View control : controls) control.setEnabled(!working);
-            cancel.setEnabled(working);
+            cancel.setEnabled(working && model.canCancel());
             if (working) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         });
@@ -149,6 +163,10 @@ public final class MainActivity extends ComponentActivity {
             rendering = false;
             showSelection(editor.getSelectionStart(), editor.getSelectionEnd());
         });
+        if (saved != null) {
+            precision.setSelection(saved.getInt("precision", 0));
+            script.setSelection(saved.getInt("script", 0));
+        }
     }
 
     private void showSelection(int start, int end) {
@@ -177,6 +195,8 @@ public final class MainActivity extends ComponentActivity {
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
         if (cameraUri != null) out.putString("camera", cameraUri.toString());
+        out.putInt("precision", precision.getSelectedItemPosition());
+        out.putInt("script", script.getSelectedItemPosition());
     }
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }

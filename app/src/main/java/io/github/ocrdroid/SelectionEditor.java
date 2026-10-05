@@ -1,10 +1,10 @@
 package io.github.ocrdroid;
 
 import android.content.Context;
-import android.widget.EditText;
+import androidx.appcompat.widget.AppCompatEditText;
 import java.util.function.BiConsumer;
 
-public final class SelectionEditor extends EditText {
+public final class SelectionEditor extends AppCompatEditText {
     public BiConsumer<Integer, Integer> selectionChanged;
     public SelectionEditor(Context context) { super(context); }
 

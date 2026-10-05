@@ -39,6 +39,8 @@ jobs:
           git diff --exit-code "$(jq -r .head_sha gate.json)" HEAD -- native/ocr.cpp native/ocr.h runtime.lock.json
           echo "GATE_RUN=$RUN" >> "$GITHUB_ENV"
           echo "LLAMA_REV=$(jq -r .llama_revision runtime.lock.json)" >> "$GITHUB_ENV"
+          mkdir -p results
+          cp gate.json results/inference-gate.json
       - uses: actions/download-artifact@v4
         with:
           name: ovisocr2-q4
