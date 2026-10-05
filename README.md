@@ -36,10 +36,17 @@ phone is provisioned by this repository.
 
 `runtime.lock.json` pins both model and llama.cpp revisions. The model folder is
 `model-q4_k_m.gguf`, `mmproj-f16.gguf`, `manifest.json`, and `LICENSE`.
+Conversion uses `--no-mtp`: OvisOCR2's inherited configuration advertises an MTP
+draft layer that is absent from the published weights. Including that layer's
+metadata makes llama.cpp reject the model with a missing `blk.24` tensor.
 Conversion also produces `model-bf16.gguf` in CI before quantization; it is not
 included in the default smaller artifact. BF16 GGUF support is the intended
 higher-precision path; raw Hugging Face safetensors cannot be loaded directly by
 llama.cpp and must be converted in CI, not on the phone.
+
+Use the `Export optional BF16 model folder` workflow to export the BF16 language
+model with the matching F16 vision projector and a checksum manifest. This
+higher-memory profile is optional and separate from Q4 hardware acceptance.
 
 The initial mobile profile uses CPU inference, four or fewer threads, 4096
 context tokens, and at most 1024 image tokens. This is deliberately smaller than

@@ -4,5 +4,6 @@
   "model_repository": "ATH-MaaS/OvisOCR2",
   "model_revision": "1fc9221b7823a371d6e97f92d527cc847e24e107",
   "quantization": "Q4_K_M",
+  "exclude_mtp": true,
   "projector_type": "f16"
 }

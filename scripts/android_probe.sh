@@ -16,7 +16,7 @@ if [[ "${PHYSICAL_DEVICE:-0}" != 1 ]]; then
   adb shell svc data disable
 fi
 for name in receipt note; do
-  timeout 900 adb shell "$remote/ocr-probe $remote/model-q4_k_m.gguf $remote/mmproj-f16.gguf $remote/$name.png $remote/$name.txt $remote/$name.json" > "results/$name.log" 2>&1
+  timeout 900 adb shell "$remote/ocr-probe $remote/model-q4_k_m.gguf $remote/mmproj-f16.gguf $remote/$name.png $remote/$name.txt $remote/$name.json" 2>&1 | tee "results/$name.log"
   adb pull "$remote/$name.txt" "results/$name.txt"
   adb pull "$remote/$name.json" "results/$name.json"
 done

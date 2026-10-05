@@ -1,0 +1,31 @@
+name: Export optional BF16 model folder
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: echo "LLAMA_REV=$(jq -r .llama_revision runtime.lock.json)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: ${{ env.LLAMA_REV }}
+          path: vendor/llama.cpp
+      - run: |
+          pip install -r vendor/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
+          python scripts/prepare_models.py --bf16
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ovisocr2-bf16
+          path: models/
+          compression-level: 0
+          retention-days: 14
