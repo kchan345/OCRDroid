@@ -8,21 +8,21 @@ OpenAI chat completions API.
 ## Downloads
 
 **Start with the APK and the Q4 model folder below.** They are published in the
-[v0.3.0-preview release](https://github.com/kchan345/OCRDroid/releases/tag/v0.3.0-preview),
+[v0.4.0-preview release](https://github.com/kchan345/OCRDroid/releases/tag/v0.4.0-preview),
 built and verified by GitHub Actions. They are not the original Hugging Face
 weight files. Release downloads need no GitHub sign-in and do not expire.
 
 | Download | What it contains | When to use it |
 | --- | --- | --- |
-| [OCRDroid-preview.apk](https://github.com/kchan345/OCRDroid/releases/download/v0.3.0-preview/OCRDroid-preview.apk) | Debug-signed APK, approximately 55 MB | Install this Android development preview |
-| [ovisocr2-q4.zip](https://github.com/kchan345/OCRDroid/releases/download/v0.3.0-preview/ovisocr2-q4.zip) | Q4_K_M language model, F16 vision projector, checksum manifest, license; approximately 734 MB | Recommended default |
-| [ovisocr2-bf16.zip](https://github.com/kchan345/OCRDroid/releases/download/v0.3.0-preview/ovisocr2-bf16.zip) | BF16 language model with the same F16 vision projector and a manifest; approximately 1.72 GB | Optional higher-precision alternative with greater RAM/storage use |
-| [SHA256SUMS.txt](https://github.com/kchan345/OCRDroid/releases/download/v0.3.0-preview/SHA256SUMS.txt) | SHA-256 checksums for the release files | Verify downloads |
+| [OCRDroid-preview.apk](https://github.com/kchan345/OCRDroid/releases/download/v0.4.0-preview/OCRDroid-preview.apk) | Debug-signed APK, approximately 55 MB | Install this Android development preview |
+| [ovisocr2-q4.zip](https://github.com/kchan345/OCRDroid/releases/download/v0.4.0-preview/ovisocr2-q4.zip) | Q4_K_M language model, F16 vision projector, checksum manifest, license; approximately 734 MB | Recommended default |
+| [ovisocr2-bf16.zip](https://github.com/kchan345/OCRDroid/releases/download/v0.4.0-preview/ovisocr2-bf16.zip) | BF16 language model with the same F16 vision projector and a manifest; approximately 1.72 GB | Optional higher-precision alternative with greater RAM/storage use |
+| [SHA256SUMS.txt](https://github.com/kchan345/OCRDroid/releases/download/v0.4.0-preview/SHA256SUMS.txt) | SHA-256 checksums for the release files | Verify downloads |
 
 The release also includes `app-evidence.zip`, `bf16-evidence.zip`, and
-`MODEL-LICENSE.txt`. It was built from commit `226e5b4` (app run
-[37527556912](https://github.com/kchan345/OCRDroid/actions/runs/37527556912),
-Q4 gate [37525173688](https://github.com/kchan345/OCRDroid/actions/runs/37525173688),
+`MODEL-LICENSE.txt`. It was built from commit `7f17030` (app run
+[37535518514](https://github.com/kchan345/OCRDroid/actions/runs/37535518514),
+Q4 gate [37531975331](https://github.com/kchan345/OCRDroid/actions/runs/37531975331),
 BF16 run [37387022013](https://github.com/kchan345/OCRDroid/actions/runs/37387022013)).
 
 For newer builds, Actions artifacts are a fallback. Downloading them requires
