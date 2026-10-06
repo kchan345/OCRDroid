@@ -52,7 +52,7 @@ public class OfflineFlowTest {
                 vm.image = image;
                 vm.text = result.text;
                 vm.anchors = anchors;
-                vm.showingResult = true;
+                vm.step = OcrViewModel.Step.RESULT;
                 vm.editing = true;
                 vm.revision.setValue(vm.revision.getValue() + 1);
                 assertEquals(android.view.View.GONE, activity.findViewById(R.id.input_screen).getVisibility());
@@ -84,7 +84,7 @@ public class OfflineFlowTest {
                 editor.setSelection(total, total + 5);
                 DocumentView preview = activity.findViewById(R.id.preview);
                 assertTrue("Unedited anchors must survive rotation", preview.highlightedRegionCount() > 0);
-                activity.findViewById(R.id.mode_toggle).performClick();
+                activity.findViewById(R.id.mode_rendered).performClick();
                 assertEquals(android.view.View.VISIBLE, activity.findViewById(R.id.rendered).getVisibility());
                 assertEquals(android.view.View.GONE, editor.getVisibility());
                 assertEquals("Rendered mode has no text selection to highlight", 0, preview.highlightedRegionCount());
@@ -97,7 +97,8 @@ public class OfflineFlowTest {
             scenario.onActivity(activity -> {
                 androidx.drawerlayout.widget.DrawerLayout drawer = activity.findViewById(R.id.drawer);
                 drawer.openDrawer(androidx.core.view.GravityCompat.START);
-                activity.findViewById(R.id.nav_settings).performClick();
+                com.google.android.material.navigation.NavigationView navigation = activity.findViewById(R.id.drawer_menu);
+                assertTrue(navigation.getMenu().performIdentifierAction(R.id.nav_settings, 0));
             });
             android.app.Activity settings = instrumentation.waitForMonitorWithTimeout(monitor, 10_000);
             assertNotNull("Hamburger menu must open model settings", settings);
@@ -114,7 +115,7 @@ public class OfflineFlowTest {
             instrumentation.removeMonitor(monitor);
             scenario.onActivity(activity -> {
                 OcrViewModel vm = new ViewModelProvider(activity).get(OcrViewModel.class);
-                activity.findViewById(R.id.mode_toggle).performClick();
+                activity.findViewById(R.id.mode_edit).performClick();
                 assertTrue(vm.editing);
                 vm.backToInput();
                 assertEquals(android.view.View.VISIBLE, activity.findViewById(R.id.input_screen).getVisibility());

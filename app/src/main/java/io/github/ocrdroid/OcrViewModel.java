@@ -27,11 +27,23 @@ public final class OcrViewModel extends AndroidViewModel {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ModelStore models;
     private final AppSettings settings;
+    public enum Step { INPUT, ADJUST, RESULT }
+
+    /** Editable base image: the decoded original, or only the selected region once the original is discarded. */
+    public Bitmap source;
+    /** Downscaled {@link #source} for the live editor preview. */
+    public Bitmap sourcePreview;
+    public Edits edits = new Edits();
+    /** OCR input after rotation, crop, and colour filters; highlight boxes use its coordinates. */
     public Bitmap image;
+    /** Rotated full original shown beside the output when it is kept; null shows {@link #image}. */
+    public Bitmap original;
+    /** OCR region within {@link #original}, or null. */
+    public android.graphics.Rect region;
+    public boolean keepOriginal;
     public String text = "";
     public List<TextAnchors.Anchor> anchors = new ArrayList<>();
-    /** Step 2 of the workflow: image and OCR output side by side. */
-    public boolean showingResult;
+    public Step step = Step.INPUT;
     /** Output panel mode: plain-text editor when true, rendered Markdown when false. */
     public boolean editing;
     private volatile boolean cancelled;
@@ -43,8 +55,11 @@ public final class OcrViewModel extends AndroidViewModel {
         super(application);
         models = new ModelStore(application);
         settings = new AppSettings(application);
+        keepOriginal = settings.keepOriginal();
         status.setValue(application.getString(R.string.ready));
     }
+
+    private File file(String name) { return new File(getApplication().getFilesDir(), name); }
 
     private String message(int id, Object... args) { return getApplication().getString(id, args); }
 
@@ -84,25 +99,101 @@ public final class OcrViewModel extends AndroidViewModel {
             message(R.string.failure, error.getMessage())));
     }
 
+    /** Step 1 to 2: decodes the photo and opens the adjust screen. */
     public void openImage(Uri uri) {
         if (!begin(message(R.string.loading_image), false)) return;
         Work.MODELS.execute(() -> {
             try {
                 Bitmap normalized = ImageFiles.read(getApplication(), uri);
-                ImageFiles.write(normalized, new File(getApplication().getFilesDir(), "page.png"));
-                main.post(() -> {
-                    if (cleared) return;
-                    image = normalized;
+                ImageFiles.write(normalized, file("source.png"));
+                Bitmap small = PageEditor.preview(normalized, 1280);
+                finish(() -> {
+                    source = normalized;
+                    sourcePreview = small;
+                    edits = new Edits();
+                    image = null;
+                    original = null;
+                    region = null;
                     text = "";
                     anchors = new ArrayList<>();
-                    showingResult = true;
+                    step = Step.ADJUST;
+                    status.setValue(message(R.string.adjust_ready));
+                });
+            } catch (IOException | SecurityException | IllegalArgumentException error) { fail(error); }
+        });
+    }
+
+    public void setKeepOriginal(boolean keep) {
+        keepOriginal = keep;
+        settings.setKeepOriginal(keep);
+    }
+
+    /** Suggests a black-and-white threshold for the current region from the preview image. */
+    public int autoThreshold() {
+        return sourcePreview == null ? 128 : PageEditor.autoThreshold(sourcePreview, edits);
+    }
+
+    /**
+     * Step 2 to 3: renders the OCR page from the edits, stores it, and starts OCR. When only the
+     * selected region is kept, it replaces the stored original and the camera capture is deleted.
+     */
+    public void applyEdits() {
+        if (source == null) { status.setValue(message(R.string.need_image)); return; }
+        if (!begin(message(R.string.preparing_page), false)) return;
+        Bitmap base = source;
+        Edits snapshot = edits.copy();
+        boolean keep = keepOriginal;
+        Work.MODELS.execute(() -> {
+            try {
+                Bitmap page = PageEditor.render(base, snapshot, true, true, PageEditor.MAX_EDGE);
+                ImageFiles.write(page, file("page.png"));
+                Bitmap full = null, nextSource = base, nextPreview = null;
+                android.graphics.Rect area = null;
+                Edits nextEdits = snapshot;
+                if (keep) {
+                    boolean unchanged = !snapshot.geometryChanged() && snapshot.colorMatrix() == null;
+                    full = unchanged ? page : PageEditor.render(base, snapshot, false, false, PageEditor.MAX_EDGE);
+                    if (!snapshot.fullFrame()) area = PageEditor.region(base, snapshot, PageEditor.MAX_EDGE);
+                } else {
+                    nextSource = snapshot.geometryChanged()
+                        ? PageEditor.render(base, snapshot, true, false, PageEditor.MAX_EDGE) : base;
+                    ImageFiles.write(nextSource, file("source.png"));
+                    File capture = new File(new File(getApplication().getCacheDir(), "camera"), "capture.jpg");
+                    if (capture.exists() && !capture.delete()) Log.w("OCRDroid", "Cannot delete camera capture");
+                    nextEdits = snapshot.filtersOnly();
+                    nextPreview = PageEditor.preview(nextSource, 1280);
+                }
+                Bitmap shown = full, editable = nextSource, editablePreview = nextPreview;
+                android.graphics.Rect shownRegion = area;
+                Edits finalEdits = nextEdits;
+                main.post(() -> {
+                    if (cleared) return;
+                    image = page;
+                    original = shown;
+                    region = shownRegion;
+                    source = editable;
+                    if (editablePreview != null) sourcePreview = editablePreview;
+                    edits = finalEdits;
+                    text = "";
+                    anchors = new ArrayList<>();
+                    step = Step.RESULT;
                     editing = false;
                     busy.setValue(false);
                     revision.setValue(revision.getValue() + 1);
                     recognize();
                 });
-            } catch (IOException | SecurityException | IllegalArgumentException error) { fail(error); }
+            } catch (IOException | IllegalArgumentException | OutOfMemoryError error) {
+                fail(error instanceof OutOfMemoryError ? new IOException("Not enough memory to prepare the image") : (Exception) error);
+            }
         });
+    }
+
+    /** Step 3 back to 2: re-opens the editor; a running OCR job is cancelled. */
+    public void adjust() {
+        if (source == null) return;
+        cancel();
+        step = Step.ADJUST;
+        revision.setValue(revision.getValue() + 1);
     }
 
     public void recognize() {
@@ -134,7 +225,7 @@ public final class OcrViewModel extends AndroidViewModel {
                     ModelStore.Bundle bundle = models.selected(backend.precision);
                     result = OcrEngine.nativeRecognize(bundle.language.getAbsolutePath(),
                         bundle.vision.getAbsolutePath(),
-                        new File(getApplication().getFilesDir(), "page.png").getAbsolutePath(), MAX_TOKENS);
+                        file("page.png").getAbsolutePath(), MAX_TOKENS);
                 } else {
                     ByteArrayOutputStream jpeg = new ByteArrayOutputStream();
                     if (!page.compress(Bitmap.CompressFormat.JPEG, 95, jpeg)) throw new IOException("Cannot encode photo");
@@ -183,10 +274,10 @@ public final class OcrViewModel extends AndroidViewModel {
 
     public boolean canCancel() { return recognizing; }
 
-    /** Leaves the result step; a running OCR job is cancelled because its result would be discarded. */
+    /** Returns to step 1; a running OCR job is cancelled because its result would be discarded. */
     public void backToInput() {
         cancel();
-        showingResult = false;
+        step = Step.INPUT;
         revision.setValue(revision.getValue() + 1);
     }
 

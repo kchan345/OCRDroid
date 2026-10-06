@@ -1,9 +1,24 @@
 <resources>
-    <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#126F64</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowActionModeOverlay">true</item>
-        <item name="android:windowBackground">#F7F8F5</item>
+    <style name="Widget.OCRDroid.Button" parent="Widget.Material3.Button">
+        <item name="android:minHeight">48dp</item>
+    </style>
+    <!-- Overlays let code-built MaterialButtons pick a style through materialButtonStyle. -->
+    <style name="ThemeOverlay.OCRDroid.TonalButton" parent="">
+        <item name="materialButtonStyle">@style/Widget.Material3.Button.TonalButton</item>
+    </style>
+    <style name="ThemeOverlay.OCRDroid.OutlinedButton" parent="">
+        <item name="materialButtonStyle">@style/Widget.Material3.Button.OutlinedButton</item>
+    </style>
+    <style name="ThemeOverlay.OCRDroid.TextButton" parent="">
+        <item name="materialButtonStyle">@style/Widget.Material3.Button.TextButton</item>
+    </style>
+    <style name="ThemeOverlay.OCRDroid.IconButton" parent="">
+        <item name="materialButtonStyle">@style/Widget.Material3.Button.IconButton.Filled.Tonal</item>
+    </style>
+    <style name="ThemeOverlay.OCRDroid.SegmentButton" parent="">
+        <item name="materialButtonStyle">@style/Widget.Material3.Button.OutlinedButton</item>
+    </style>
+    <style name="ThemeOverlay.OCRDroid.Dropdown" parent="">
+        <item name="textInputStyle">@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu</item>
     </style>
 </resources>

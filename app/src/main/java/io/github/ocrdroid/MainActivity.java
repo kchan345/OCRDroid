@@ -3,21 +3,22 @@ package io.github.ocrdroid;
 import android.app.ActivityManager;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.Menu;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
-import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -26,7 +27,6 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.PickVisualMediaRequest;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.Toolbar;
 import androidx.core.content.FileProvider;
 import androidx.core.view.GravityCompat;
 import androidx.core.view.ViewCompat;
@@ -34,6 +34,14 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.lifecycle.ViewModelProvider;
+import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.button.MaterialButtonToggleGroup;
+import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.materialswitch.MaterialSwitch;
+import com.google.android.material.navigation.NavigationView;
+import com.google.android.material.progressindicator.LinearProgressIndicator;
+import com.google.android.material.slider.Slider;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -41,20 +49,30 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 
+/** Scan workflow: 1) choose an image, 2) adjust it, 3) image and OCR output side by side. */
 public final class MainActivity extends AppCompatActivity {
-    static final int ACCENT = Color.rgb(18, 111, 100);
+    private static final int PRIMARY = androidx.appcompat.R.attr.colorPrimary;
+    private static final int ON_SURFACE = com.google.android.material.R.attr.colorOnSurface;
+    private static final int PRIMARY_CONTAINER = com.google.android.material.R.attr.colorPrimaryContainer;
+    private static final int ON_PRIMARY_CONTAINER = com.google.android.material.R.attr.colorOnPrimaryContainer;
     private OcrViewModel model;
     private DrawerLayout drawer;
-    private Toolbar toolbar;
-    private View inputScreen, resultScreen;
-    private TextView status, selection, engine;
-    private Button settingsShortcut, cancel, recognize, modeToggle;
+    private MaterialToolbar toolbar;
+    private View inputScreen, adjustScreen, resultScreen;
+    private TextView status, selection, engine, cropSize, straightenValue, thresholdValue, keepDetail;
+    private ImageView engineIcon;
+    private MaterialButton cancel, thresholdAuto;
+    private MaterialButtonToggleGroup modeGroup, keepGroup;
+    private CropView cropView;
+    private Slider straighten, threshold;
+    private MaterialSwitch grayscale, blackWhite;
+    private LinearProgressIndicator progress;
     private DocumentView preview;
     private SelectionEditor editor;
     private WebView rendered;
     private String renderedText;
     private Bitmap renderedImage;
-    private boolean rendering;
+    private boolean rendering, updating;
     private Uri cameraUri;
     private final List<View> controls = new ArrayList<>();
     private final List<View> compactable = new ArrayList<>();
@@ -85,9 +103,11 @@ public final class MainActivity extends AppCompatActivity {
         toolbar = Ui.toolbar(this, R.string.app_name, R.drawable.ic_menu, R.string.open_menu,
             () -> drawer.openDrawer(GravityCompat.START));
         root.addView(toolbar);
-        LinearLayout body = Ui.column(this);
-        body.setPadding(Ui.dp(this, 12), Ui.dp(this, 4), Ui.dp(this, 12), Ui.dp(this, 8));
-        root.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
+        progress = new LinearProgressIndicator(this);
+        progress.setId(R.id.progress);
+        progress.setIndeterminate(true);
+        progress.setVisibility(View.INVISIBLE);
+        root.addView(progress, new LinearLayout.LayoutParams(-1, -2));
         ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
             androidx.core.graphics.Insets bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.ime());
@@ -98,24 +118,29 @@ public final class MainActivity extends AppCompatActivity {
         });
 
         status = Ui.label(this, R.string.ready, 13);
-        status.setMaxLines(4);
+        status.setId(R.id.status);
+        status.setMaxLines(3);
+        status.setPadding(Ui.dp(this, 16), Ui.dp(this, 2), Ui.dp(this, 16), Ui.dp(this, 6));
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        body.addView(status);
+        root.addView(status);
         compactable.add(status);
         FrameLayout screens = new FrameLayout(this);
-        body.addView(screens, new LinearLayout.LayoutParams(-1, 0, 1));
+        root.addView(screens, new LinearLayout.LayoutParams(-1, 0, 1));
         inputScreen = buildInputScreen();
+        adjustScreen = buildAdjustScreen();
         resultScreen = buildResultScreen();
         screens.addView(inputScreen, new FrameLayout.LayoutParams(-1, -1));
+        screens.addView(adjustScreen, new FrameLayout.LayoutParams(-1, -1));
         screens.addView(resultScreen, new FrameLayout.LayoutParams(-1, -1));
 
-        drawer.addView(buildDrawer(), new DrawerLayout.LayoutParams(Ui.dp(this, 280), -1, Gravity.START));
+        drawer.addView(buildDrawer(), new DrawerLayout.LayoutParams(-2, -1, Gravity.START));
         setContentView(drawer);
 
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override public void handleOnBackPressed() {
                 if (drawer.isDrawerOpen(GravityCompat.START)) drawer.closeDrawer(GravityCompat.START);
-                else if (model.showingResult) model.backToInput();
+                else if (model.step == OcrViewModel.Step.RESULT && model.source != null) model.adjust();
+                else if (model.step != OcrViewModel.Step.INPUT) model.backToInput();
                 else { setEnabled(false); getOnBackPressedDispatcher().onBackPressed(); setEnabled(true); }
             }
         });
@@ -123,8 +148,10 @@ public final class MainActivity extends AppCompatActivity {
         model.busy.observe(this, working -> {
             for (View control : controls) control.setEnabled(!working);
             cancel.setEnabled(working && model.canCancel());
+            progress.setVisibility(working ? View.VISIBLE : View.INVISIBLE);
             if (working) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if (model.step == OcrViewModel.Step.ADJUST) syncAdjust();
         });
         model.revision.observe(this, value -> refresh());
     }
@@ -134,35 +161,52 @@ public final class MainActivity extends AppCompatActivity {
         showEngine();
     }
 
+    private boolean idle() { return !Boolean.TRUE.equals(model.busy.getValue()); }
+
+    // Step 1: choose an image.
     private View buildInputScreen() {
         ScrollView scroll = new ScrollView(this);
         scroll.setId(R.id.input_screen);
         LinearLayout column = Ui.column(this);
+        int pad = Ui.dp(this, 16);
+        column.setPadding(pad, Ui.dp(this, 4), pad, pad);
         scroll.addView(column);
-        column.addView(Ui.heading(this, R.string.step_choose));
+        column.addView(Ui.headline(this, R.string.step_choose));
         column.addView(Ui.label(this, R.string.step_choose_detail, 14));
+
+        LinearLayout sources = Ui.row(this);
+        LinearLayout.LayoutParams first = new LinearLayout.LayoutParams(0, -2, 1);
+        first.setMarginEnd(Ui.dp(this, 6));
+        LinearLayout.LayoutParams second = new LinearLayout.LayoutParams(0, -2, 1);
+        second.setMarginStart(Ui.dp(this, 6));
+        sources.addView(sourceCard(R.id.camera, R.drawable.ic_camera, R.string.camera, R.string.camera_detail,
+            this::takePhoto), first);
+        sources.addView(sourceCard(R.id.photos, R.drawable.ic_photos, R.string.photos, R.string.photos_detail,
+            this::pickPhoto), second);
+        column.addView(sources, Ui.margins(this, -1, -2, 16, 12));
+
+        MaterialCardView engineCard = Ui.card(this);
+        LinearLayout content = Ui.content(engineCard);
+        LinearLayout header = Ui.row(this);
+        engineIcon = icon(R.drawable.ic_memory, PRIMARY);
+        header.addView(engineIcon, new LinearLayout.LayoutParams(Ui.dp(this, 24), Ui.dp(this, 24)));
+        TextView title = Ui.text(this, R.string.engine_card_title,
+            com.google.android.material.R.style.TextAppearance_Material3_TitleSmall, ON_SURFACE);
+        title.setPaddingRelative(Ui.dp(this, 12), 0, 0, 0);
+        header.addView(title, Ui.weighted());
+        header.addView(control(Ui.textButton(this, R.string.open_settings, R.drawable.ic_tune, this::openSettings)));
+        content.addView(header);
         engine = Ui.label(this, R.string.ready, 14);
         engine.setId(R.id.engine_summary);
-        GradientDrawable card = new GradientDrawable();
-        card.setColor(Color.rgb(230, 240, 236));
-        card.setCornerRadius(Ui.dp(this, 8));
-        engine.setBackground(card);
-        int pad = Ui.dp(this, 12);
-        engine.setPadding(pad, pad, pad, pad);
-        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
-        cardParams.setMargins(0, Ui.dp(this, 12), 0, Ui.dp(this, 4));
-        column.addView(engine, cardParams);
-        settingsShortcut = Ui.button(this, R.string.open_settings, this::openSettings);
-        column.addView(settingsShortcut);
-        Button take = control(Ui.button(this, R.string.camera, this::takePhoto));
-        take.setId(R.id.camera);
-        take.setMinHeight(Ui.dp(this, 72));
-        column.addView(take, spaced());
-        Button pick = control(Ui.button(this, R.string.photos, () -> photos.launch(new PickVisualMediaRequest.Builder()
-            .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly.INSTANCE).build())));
-        pick.setId(R.id.photos);
-        pick.setMinHeight(Ui.dp(this, 72));
-        column.addView(pick, spaced());
+        content.addView(engine);
+        column.addView(engineCard, Ui.margins(this, -1, -2, 0, 12));
+
+        MaterialCardView steps = Ui.card(this);
+        Ui.content(steps).addView(Ui.text(this, R.string.steps_title,
+            com.google.android.material.R.style.TextAppearance_Material3_TitleSmall, ON_SURFACE));
+        Ui.content(steps).addView(Ui.label(this, R.string.steps_detail, 14));
+        column.addView(steps, Ui.margins(this, -1, -2, 0, 12));
+
         ActivityManager.MemoryInfo info = new ActivityManager.MemoryInfo();
         getSystemService(ActivityManager.class).getMemoryInfo(info);
         if (info.totalMem <= 6_000_000_000L) column.addView(Ui.label(this, R.string.low_memory, 12));
@@ -170,46 +214,283 @@ public final class MainActivity extends AppCompatActivity {
         return scroll;
     }
 
+    private MaterialCardView sourceCard(int id, int iconResource, int title, int detail, Runnable action) {
+        MaterialCardView card = Ui.card(this);
+        card.setId(id);
+        card.setCardBackgroundColor(Ui.color(this, PRIMARY_CONTAINER));
+        card.setClickable(true);
+        card.setFocusable(true);
+        card.setContentDescription(getString(title) + ". " + getString(detail));
+        card.setOnClickListener(view -> action.run());
+        LinearLayout content = Ui.content(card);
+        int pad = Ui.dp(this, 20);
+        content.setPadding(pad, pad, pad, pad);
+        content.addView(icon(iconResource, ON_PRIMARY_CONTAINER), new LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 36)));
+        TextView name = Ui.text(this, title, com.google.android.material.R.style.TextAppearance_Material3_TitleMedium,
+            ON_PRIMARY_CONTAINER);
+        name.setPadding(0, Ui.dp(this, 14), 0, 0);
+        content.addView(name);
+        content.addView(Ui.text(this, detail, com.google.android.material.R.style.TextAppearance_Material3_BodySmall,
+            ON_PRIMARY_CONTAINER));
+        controls.add(card);
+        return card;
+    }
+
+    private ImageView icon(int drawable, int colorAttribute) {
+        ImageView view = new ImageView(this);
+        view.setImageResource(drawable);
+        view.setImageTintList(ColorStateList.valueOf(Ui.color(this, colorAttribute)));
+        view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        return view;
+    }
+
+    // Step 2: crop, rotate, and filter with a live preview.
+    private View buildAdjustScreen() {
+        LinearLayout column = Ui.column(this);
+        column.setId(R.id.adjust_screen);
+        cropView = new CropView(this);
+        cropView.setId(R.id.crop_view);
+        cropView.setAccent(Ui.color(this, PRIMARY));
+        cropView.setOnCropChanged(this::showCropSize);
+        controls.add(cropView);
+        column.addView(cropView, new LinearLayout.LayoutParams(-1, 0, 1.2f));
+        cropSize = Ui.label(this, 0, 12);
+        cropSize.setId(R.id.crop_size);
+        cropSize.setGravity(Gravity.CENTER);
+        column.addView(cropSize, new LinearLayout.LayoutParams(-1, -2));
+
+        ScrollView scroll = new ScrollView(this);
+        column.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+        LinearLayout tools = Ui.column(this);
+        int pad = Ui.dp(this, 16);
+        tools.setPadding(pad, Ui.dp(this, 4), pad, Ui.dp(this, 8));
+        scroll.addView(tools);
+
+        LinearLayout rotation = Ui.row(this);
+        rotation.addView(tool(R.id.rotate_left, R.drawable.ic_rotate_left, R.string.rotate_left, () -> model.edits.rotate(-1)));
+        rotation.addView(tool(R.id.rotate_right, R.drawable.ic_rotate_right, R.string.rotate_right, () -> model.edits.rotate(1)));
+        rotation.addView(tool(R.id.crop_reset, R.drawable.ic_fullscreen, R.string.crop_full, () -> model.edits.resetCrop()));
+        rotation.addView(new View(this), Ui.weighted());
+        MaterialButton reset = control(Ui.textButton(this, R.string.reset_edits, 0, () -> {
+            model.edits = new Edits();
+            syncAdjust();
+        }));
+        reset.setId(R.id.edits_reset);
+        rotation.addView(reset);
+        tools.addView(rotation);
+
+        straightenValue = Ui.label(this, 0, 13);
+        tools.addView(sliderHeader(R.string.straighten, straightenValue));
+        straighten = slider(R.id.straighten, -Edits.MAX_STRAIGHTEN, Edits.MAX_STRAIGHTEN, 0.5f, R.string.straighten);
+        straighten.addOnChangeListener((view, value, user) -> {
+            if (updating) return;
+            model.edits.setStraighten(value);
+            syncAdjust();
+        });
+        tools.addView(straighten);
+
+        grayscale = switchView(tools, R.id.grayscale, R.string.grayscale);
+        grayscale.setOnCheckedChangeListener((view, checked) -> {
+            if (updating) return;
+            model.edits.grayscale = checked;
+            syncAdjust();
+        });
+        blackWhite = switchView(tools, R.id.black_white, R.string.black_white);
+        blackWhite.setOnCheckedChangeListener((view, checked) -> {
+            if (updating) return;
+            model.edits.blackWhite = checked;
+            syncAdjust();
+        });
+        thresholdValue = Ui.label(this, 0, 13);
+        tools.addView(sliderHeader(R.string.threshold, thresholdValue));
+        LinearLayout thresholdRow = Ui.row(this);
+        threshold = slider(R.id.threshold, 1, 254, 1, R.string.threshold);
+        threshold.addOnChangeListener((view, value, user) -> {
+            if (updating) return;
+            model.edits.setThreshold(Math.round(value));
+            syncAdjust();
+        });
+        thresholdRow.addView(threshold, new LinearLayout.LayoutParams(0, -2, 1));
+        thresholdAuto = control(Ui.tonal(this, R.string.threshold_auto, R.drawable.ic_auto, () -> {
+            model.edits.setThreshold(model.autoThreshold());
+            syncAdjust();
+        }));
+        thresholdAuto.setId(R.id.threshold_auto);
+        thresholdAuto.setTooltipText(getString(R.string.threshold_auto_description));
+        thresholdRow.addView(thresholdAuto);
+        tools.addView(thresholdRow);
+
+        TextView keepTitle = Ui.panelTitle(this, R.string.keep_title);
+        keepTitle.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 6));
+        tools.addView(keepTitle);
+        keepGroup = new MaterialButtonToggleGroup(this);
+        keepGroup.setId(R.id.keep_group);
+        keepGroup.setSingleSelection(true);
+        keepGroup.setSelectionRequired(true);
+        keepGroup.addView(control(Ui.segment(this, R.id.keep_original, R.string.keep_original, 0)),
+            new LinearLayout.LayoutParams(0, -2, 1));
+        keepGroup.addView(control(Ui.segment(this, R.id.keep_region, R.string.keep_region, 0)),
+            new LinearLayout.LayoutParams(0, -2, 1));
+        keepGroup.addOnButtonCheckedListener((group, id, checked) -> {
+            if (updating || !checked) return;
+            model.setKeepOriginal(id == R.id.keep_original);
+            syncAdjust();
+        });
+        tools.addView(keepGroup, new LinearLayout.LayoutParams(-1, -2));
+        keepDetail = Ui.label(this, 0, 12);
+        tools.addView(keepDetail);
+
+        LinearLayout bar = Ui.row(this);
+        bar.setPadding(pad, Ui.dp(this, 8), pad, Ui.dp(this, 8));
+        bar.setBackgroundColor(Ui.color(this, com.google.android.material.R.attr.colorSurfaceContainer));
+        MaterialButton back = control(Ui.outlined(this, R.string.back, R.drawable.ic_back, () -> model.backToInput()));
+        back.setId(R.id.adjust_back);
+        bar.addView(back, Ui.weighted());
+        MaterialButton apply = control(Ui.filled(this, R.string.recognize, R.drawable.ic_play, () -> model.applyEdits()));
+        apply.setId(R.id.apply_edits);
+        LinearLayout.LayoutParams applyParams = Ui.weighted();
+        applyParams.setMarginStart(Ui.dp(this, 12));
+        bar.addView(apply, applyParams);
+        column.addView(bar, new LinearLayout.LayoutParams(-1, -2));
+        return column;
+    }
+
+    private MaterialButton tool(int id, int drawable, int description, Runnable change) {
+        MaterialButton button = control(Ui.iconButton(this, drawable, description, () -> {
+            change.run();
+            syncAdjust();
+        }));
+        button.setId(id);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, -2);
+        params.setMarginEnd(Ui.dp(this, 4));
+        button.setLayoutParams(params);
+        return button;
+    }
+
+    private LinearLayout sliderHeader(int title, TextView value) {
+        LinearLayout header = Ui.row(this);
+        header.setPadding(0, Ui.dp(this, 8), 0, 0);
+        header.addView(Ui.panelTitle(this, title), Ui.weighted());
+        header.addView(value);
+        return header;
+    }
+
+    private Slider slider(int id, float from, float to, float step, int description) {
+        Slider slider = new Slider(this);
+        slider.setId(id);
+        slider.setValueFrom(from);
+        slider.setValueTo(to);
+        slider.setStepSize(step);
+        slider.setValue(from <= 0 && to >= 0 ? 0 : Math.round((from + to) / 2));
+        slider.setContentDescription(getString(description));
+        controls.add(slider);
+        return slider;
+    }
+
+    private MaterialSwitch switchView(LinearLayout parent, int id, int text) {
+        MaterialSwitch view = new MaterialSwitch(this);
+        view.setId(id);
+        view.setText(text);
+        view.setMinHeight(Ui.dp(this, 48));
+        controls.add(view);
+        parent.addView(view, new LinearLayout.LayoutParams(-1, -2));
+        return view;
+    }
+
+    /** Copies the edit model into the adjust controls and redraws the live preview. */
+    private void syncAdjust() {
+        updating = true;
+        Edits edits = model.edits;
+        boolean idle = idle();
+        cropView.show(model.sourcePreview, edits);
+        straighten.setValue(Math.round(edits.straighten * 2f) / 2f);
+        straightenValue.setText(getString(R.string.degrees, edits.straighten));
+        grayscale.setChecked(edits.grayscale || edits.blackWhite);
+        grayscale.setEnabled(idle && !edits.blackWhite);
+        blackWhite.setChecked(edits.blackWhite);
+        threshold.setValue(edits.threshold);
+        threshold.setEnabled(idle && edits.blackWhite);
+        thresholdAuto.setEnabled(idle && edits.blackWhite);
+        thresholdValue.setText(String.valueOf(edits.threshold));
+        keepGroup.check(model.keepOriginal ? R.id.keep_original : R.id.keep_region);
+        keepDetail.setText(model.keepOriginal ? R.string.keep_original_detail : R.string.keep_region_detail);
+        showCropSize();
+        updating = false;
+    }
+
+    private void showCropSize() {
+        Bitmap source = model.source;
+        if (source == null) { cropSize.setText(""); return; }
+        int[] frame = model.edits.frameSize(source.getWidth(), source.getHeight(), PageEditor.MAX_EDGE);
+        int[] crop = model.edits.cropPixels(frame[0], frame[1]);
+        cropSize.setText(getString(R.string.crop_size, crop[2] - crop[0], crop[3] - crop[1]));
+    }
+
+    // Step 3: image and OCR output side by side.
     private View buildResultScreen() {
         LinearLayout column = Ui.column(this);
         column.setId(R.id.result_screen);
+        int pad = Ui.dp(this, 12);
+        column.setPadding(pad, 0, pad, Ui.dp(this, 8));
         LinearLayout actions = Ui.row(this);
-        actions.addView(control(Ui.button(this, R.string.new_image, () -> model.backToInput())), Ui.weighted());
-        recognize = control(Ui.button(this, R.string.recognize, () -> model.recognize()));
+        MaterialButton newImage = control(Ui.iconButton(this, R.drawable.ic_add_photo, R.string.new_image, () -> model.backToInput()));
+        newImage.setId(R.id.new_image);
+        actions.addView(newImage);
+        MaterialButton adjust = control(Ui.iconButton(this, R.drawable.ic_crop, R.string.adjust, () -> model.adjust()));
+        adjust.setId(R.id.adjust);
+        LinearLayout.LayoutParams adjustParams = new LinearLayout.LayoutParams(-2, -2);
+        adjustParams.setMarginStart(Ui.dp(this, 4));
+        actions.addView(adjust, adjustParams);
+        MaterialButton recognize = control(Ui.filled(this, R.string.recognize, R.drawable.ic_play, () -> model.recognize()));
         recognize.setId(R.id.recognize);
-        actions.addView(recognize, Ui.weighted());
-        cancel = Ui.button(this, R.string.cancel, () -> model.cancel());
+        LinearLayout.LayoutParams runParams = Ui.weighted();
+        runParams.setMarginStart(Ui.dp(this, 8));
+        runParams.setMarginEnd(Ui.dp(this, 8));
+        actions.addView(recognize, runParams);
+        cancel = Ui.outlined(this, R.string.cancel, R.drawable.ic_stop, () -> model.cancel());
+        cancel.setId(R.id.cancel);
         cancel.setEnabled(false);
-        actions.addView(cancel, Ui.weighted());
+        actions.addView(cancel);
         column.addView(actions);
         compactable.add(actions);
 
         LinearLayout panels = Ui.row(this);
-        column.addView(panels, new LinearLayout.LayoutParams(-1, 0, 1));
-        LinearLayout left = Ui.column(this);
-        left.addView(Ui.panelTitle(this, R.string.panel_image));
+        panels.setGravity(Gravity.NO_GRAVITY);
+        column.addView(panels, Ui.margins(this, -1, 0, 4, 4));
+        ((LinearLayout.LayoutParams) panels.getLayoutParams()).weight = 1;
+
+        MaterialCardView leftCard = panelCard();
+        LinearLayout left = Ui.content(leftCard);
+        left.addView(Ui.panelTitle(this, R.string.panel_image), panelTitleParams());
         preview = new DocumentView(this);
         preview.setId(R.id.preview);
+        preview.setAccent(Ui.color(this, PRIMARY));
         left.addView(preview, new LinearLayout.LayoutParams(-1, 0, 1));
         LinearLayout.LayoutParams leftParams = new LinearLayout.LayoutParams(0, -1, 1);
         leftParams.setMarginEnd(Ui.dp(this, 6));
-        panels.addView(left, leftParams);
+        panels.addView(leftCard, leftParams);
 
-        LinearLayout right = Ui.column(this);
+        MaterialCardView rightCard = panelCard();
+        LinearLayout right = Ui.content(rightCard);
         LinearLayout header = Ui.row(this);
-        header.setGravity(Gravity.CENTER_VERTICAL);
         header.addView(Ui.panelTitle(this, R.string.panel_output), Ui.weighted());
-        modeToggle = control(Ui.button(this, R.string.mode_edit, () -> {
-            model.editing = !model.editing;
+        modeGroup = new MaterialButtonToggleGroup(this);
+        modeGroup.setId(R.id.mode_group);
+        modeGroup.setSingleSelection(true);
+        modeGroup.setSelectionRequired(true);
+        modeGroup.addView(control(modeButton(R.id.mode_rendered, R.drawable.ic_preview, R.string.mode_rendered)));
+        modeGroup.addView(control(modeButton(R.id.mode_edit, R.drawable.ic_edit, R.string.mode_edit)));
+        modeGroup.addOnButtonCheckedListener((group, id, checked) -> {
+            if (rendering || !checked) return;
+            model.editing = id == R.id.mode_edit;
             refresh();
-        }));
-        modeToggle.setId(R.id.mode_toggle);
-        header.addView(modeToggle);
-        right.addView(header);
+        });
+        header.addView(modeGroup);
+        right.addView(header, panelTitleParams());
         FrameLayout output = new FrameLayout(this);
-        output.setBackgroundColor(Color.WHITE);
         rendered = new WebView(this);
         rendered.setId(R.id.rendered);
+        rendered.setBackgroundColor(Color.TRANSPARENT);
         rendered.setContentDescription(getString(R.string.rendered_description));
         WebSettings web = rendered.getSettings();
         web.setJavaScriptEnabled(false);
@@ -223,20 +504,24 @@ public final class MainActivity extends AppCompatActivity {
         editor.setId(R.id.editor);
         editor.setSaveEnabled(false);
         editor.setGravity(Gravity.TOP | Gravity.START);
-        editor.setTextSize(14);
+        editor.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium);
+        editor.setTextColor(Ui.color(this, ON_SURFACE));
+        editor.setBackground(null);
+        editor.setPadding(Ui.dp(this, 4), Ui.dp(this, 4), Ui.dp(this, 4), Ui.dp(this, 4));
         editor.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE |
             InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         editor.setHint(R.string.editor_hint);
         controls.add(editor);
         output.addView(editor, new FrameLayout.LayoutParams(-1, -1));
         right.addView(output, new LinearLayout.LayoutParams(-1, 0, 1));
-        panels.addView(right, new LinearLayout.LayoutParams(0, -1, 1));
+        panels.addView(rightCard, new LinearLayout.LayoutParams(0, -1, 1));
 
         selection = Ui.label(this, R.string.selection_hint, 12);
         selection.setMaxLines(2);
         column.addView(selection);
-        Button save = control(Ui.button(this, R.string.export_text, () -> export.launch("ocr.md")));
-        column.addView(save);
+        MaterialButton save = control(Ui.tonal(this, R.string.export_text, R.drawable.ic_save, () -> export.launch("ocr.md")));
+        save.setId(R.id.save_markdown);
+        column.addView(save, new LinearLayout.LayoutParams(-1, -2));
         compactable.add(save);
         editor.selectionChanged = this::showSelection;
         editor.addTextChangedListener(new TextWatcher() {
@@ -251,32 +536,65 @@ public final class MainActivity extends AppCompatActivity {
         return column;
     }
 
+    private MaterialCardView panelCard() {
+        MaterialCardView card = Ui.card(this);
+        card.setRadius(Ui.dp(this, 16));
+        LinearLayout content = Ui.content(card);
+        content.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+        int pad = Ui.dp(this, 8);
+        content.setPadding(pad, Ui.dp(this, 4), pad, pad);
+        return card;
+    }
+
+    private LinearLayout.LayoutParams panelTitleParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, Ui.dp(this, 48));
+        params.setMarginStart(Ui.dp(this, 4));
+        return params;
+    }
+
+    private MaterialButton modeButton(int id, int drawable, int description) {
+        MaterialButton button = Ui.segment(this, id, 0, drawable);
+        button.setContentDescription(getString(description));
+        button.setTooltipText(getString(description));
+        button.setIconPadding(0);
+        button.setMinWidth(Ui.dp(this, 44));
+        button.setMinimumWidth(Ui.dp(this, 44));
+        button.setPaddingRelative(Ui.dp(this, 10), 0, Ui.dp(this, 10), 0);
+        return button;
+    }
+
     private View buildDrawer() {
-        LinearLayout panel = Ui.column(this);
-        panel.setId(R.id.drawer_menu);
-        panel.setBackgroundColor(Color.WHITE);
-        panel.setClickable(true);
-        ViewCompat.setOnApplyWindowInsetsListener(panel, (view, insets) -> {
-            androidx.core.graphics.Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            view.setPadding(Ui.dp(this, 8) + bars.left, Ui.dp(this, 16) + bars.top, Ui.dp(this, 8), bars.bottom);
-            return insets;
-        });
-        TextView title = Ui.heading(this, R.string.app_name);
-        title.setPadding(Ui.dp(this, 12), 0, 0, Ui.dp(this, 12));
-        panel.addView(title);
-        panel.addView(Ui.menuItem(this, R.id.nav_scan, R.string.nav_scan, () -> {
-            drawer.closeDrawer(GravityCompat.START);
-            if (model.showingResult && !Boolean.TRUE.equals(model.busy.getValue())) model.backToInput();
-        }));
-        panel.addView(Ui.menuItem(this, R.id.nav_settings, R.string.nav_settings, () -> {
-            drawer.closeDrawer(GravityCompat.START);
-            openSettings();
-        }));
+        NavigationView navigation = new NavigationView(this);
+        navigation.setId(R.id.drawer_menu);
+        LinearLayout header = Ui.column(this);
+        int pad = Ui.dp(this, 24);
+        header.setPadding(pad, pad, pad, Ui.dp(this, 12));
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.ic_launcher);
+        logo.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        header.addView(logo, new LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48)));
+        TextView name = Ui.text(this, R.string.app_name, com.google.android.material.R.style.TextAppearance_Material3_TitleLarge,
+            ON_SURFACE);
+        name.setPadding(0, Ui.dp(this, 12), 0, 0);
+        header.addView(name);
+        header.addView(Ui.label(this, R.string.tagline, 13));
         TextView version = Ui.label(this, 0, 12);
         version.setText(getString(R.string.version, BuildConfig.VERSION_NAME));
-        version.setPadding(Ui.dp(this, 12), Ui.dp(this, 16), 0, 0);
-        panel.addView(version);
-        return panel;
+        header.addView(version);
+        navigation.addHeaderView(header);
+        Menu menu = navigation.getMenu();
+        menu.add(Menu.NONE, R.id.nav_scan, 0, R.string.nav_scan).setIcon(R.drawable.ic_scan).setCheckable(true).setChecked(true);
+        menu.add(Menu.NONE, R.id.nav_settings, 1, R.string.nav_settings).setIcon(R.drawable.ic_tune);
+        navigation.setNavigationItemSelectedListener(item -> {
+            drawer.closeDrawer(GravityCompat.START);
+            if (item.getItemId() == R.id.nav_settings) {
+                openSettings();
+                return false;
+            }
+            if (model.step != OcrViewModel.Step.INPUT && idle()) model.backToInput();
+            return true;
+        });
+        return navigation;
     }
 
     private void openSettings() { startActivity(new Intent(this, SettingsActivity.class)); }
@@ -284,19 +602,26 @@ public final class MainActivity extends AppCompatActivity {
     private void showEngine() {
         String summary = model.engineSummary();
         engine.setText(summary);
+        engineIcon.setImageResource(new AppSettings(this).backend().local() ? R.drawable.ic_memory : R.drawable.ic_cloud);
         toolbar.setSubtitle(summary.split("\n", 2)[0]);
     }
 
     private void refresh() {
         rendering = true;
-        inputScreen.setVisibility(model.showingResult ? View.GONE : View.VISIBLE);
-        resultScreen.setVisibility(model.showingResult ? View.VISIBLE : View.GONE);
+        OcrViewModel.Step step = model.step;
+        Ui.gone(inputScreen, step != OcrViewModel.Step.INPUT);
+        Ui.gone(adjustScreen, step != OcrViewModel.Step.ADJUST);
+        Ui.gone(resultScreen, step != OcrViewModel.Step.RESULT);
+        toolbar.setTitle(step == OcrViewModel.Step.ADJUST ? R.string.adjust_title
+            : step == OcrViewModel.Step.RESULT ? R.string.result_title : R.string.app_name);
+        if (step == OcrViewModel.Step.ADJUST) syncAdjust();
         if (!editor.getText().toString().equals(model.text)) editor.setText(model.text);
-        preview.setImage(model.image);
+        preview.setImage(model.original != null ? model.original : model.image,
+            model.original != null ? model.region : null);
         editor.setVisibility(model.editing ? View.VISIBLE : View.GONE);
         rendered.setVisibility(model.editing ? View.GONE : View.VISIBLE);
         selection.setVisibility(model.editing ? View.VISIBLE : View.GONE);
-        modeToggle.setText(model.editing ? R.string.mode_rendered : R.string.mode_edit);
+        modeGroup.check(model.editing ? R.id.mode_edit : R.id.mode_rendered);
         if (!model.editing && (!model.text.equals(renderedText) || model.image != renderedImage)) {
             renderedText = model.text;
             renderedImage = model.image;
@@ -337,6 +662,11 @@ public final class MainActivity extends AppCompatActivity {
         else selection.setText(getString(R.string.selection_matched, boxes.size()));
     }
 
+    private void pickPhoto() {
+        photos.launch(new PickVisualMediaRequest.Builder()
+            .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly.INSTANCE).build());
+    }
+
     private void takePhoto() {
         try {
             File directory = new File(getCacheDir(), "camera");
@@ -362,10 +692,4 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private <T extends View> T control(T view) { controls.add(view); return view; }
-
-    private LinearLayout.LayoutParams spaced() {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.setMargins(0, Ui.dp(this, 8), 0, 0);
-        return params;
-    }
 }

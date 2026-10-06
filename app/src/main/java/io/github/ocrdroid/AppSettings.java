@@ -41,6 +41,10 @@ public final class AppSettings {
     public int script() { return preferences.getInt("script", 0); }
     public void setScript(int script) { preferences.edit().putInt("script", script).apply(); }
 
+    /** Whether the full original image is kept after cropping (true) or only the selected region. */
+    public boolean keepOriginal() { return preferences.getBoolean("keep_original", true); }
+    public void setKeepOriginal(boolean keep) { preferences.edit().putBoolean("keep_original", keep).apply(); }
+
     public String cloudUrl() { return preferences.getString("cloud_url", ""); }
     public String cloudModel() { return preferences.getString("cloud_model", ""); }
 

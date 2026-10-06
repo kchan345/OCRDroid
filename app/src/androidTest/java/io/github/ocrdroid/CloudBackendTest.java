@@ -128,7 +128,7 @@ public class CloudBackendTest {
                     OcrViewModel vm = new ViewModelProvider(activity).get(OcrViewModel.class);
                     assertTrue(vm.engineSummary(), vm.engineSummary().contains("cloud ATH-MaaS/OvisOCR2"));
                     vm.image = page;
-                    vm.showingResult = true;
+                    vm.step = OcrViewModel.Step.RESULT;
                     vm.revision.setValue(vm.revision.getValue() + 1);
                     vm.recognize();
                     assertTrue(vm.busy.getValue());
@@ -142,7 +142,7 @@ public class CloudBackendTest {
                     assertFalse("ML Kit should localize cloud text", vm.anchors.isEmpty());
                     assertEquals(View.VISIBLE, activity.findViewById(R.id.rendered).getVisibility());
                     assertEquals(View.GONE, activity.findViewById(R.id.editor).getVisibility());
-                    activity.findViewById(R.id.mode_toggle).performClick();
+                    activity.findViewById(R.id.mode_edit).performClick();
                     SelectionEditor editor = activity.findViewById(R.id.editor);
                     assertEquals(View.VISIBLE, editor.getVisibility());
                     int invoice = vm.text.indexOf("Invoice");

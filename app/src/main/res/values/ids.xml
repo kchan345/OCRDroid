@@ -10,7 +10,6 @@
     <item name="camera" type="id" />
     <item name="photos" type="id" />
     <item name="recognize" type="id" />
-    <item name="mode_toggle" type="id" />
     <item name="rendered" type="id" />
     <item name="editor" type="id" />
     <item name="preview" type="id" />
@@ -25,4 +24,30 @@
     <item name="test_connection" type="id" />
     <item name="save_cloud" type="id" />
     <item name="script" type="id" />
+    <item name="adjust_screen" type="id" />
+    <item name="crop_view" type="id" />
+    <item name="crop_size" type="id" />
+    <item name="rotate_left" type="id" />
+    <item name="rotate_right" type="id" />
+    <item name="crop_reset" type="id" />
+    <item name="edits_reset" type="id" />
+    <item name="straighten" type="id" />
+    <item name="grayscale" type="id" />
+    <item name="black_white" type="id" />
+    <item name="threshold" type="id" />
+    <item name="threshold_auto" type="id" />
+    <item name="keep_group" type="id" />
+    <item name="keep_original" type="id" />
+    <item name="keep_region" type="id" />
+    <item name="adjust_back" type="id" />
+    <item name="apply_edits" type="id" />
+    <item name="new_image" type="id" />
+    <item name="adjust" type="id" />
+    <item name="cancel" type="id" />
+    <item name="mode_group" type="id" />
+    <item name="mode_rendered" type="id" />
+    <item name="mode_edit" type="id" />
+    <item name="save_markdown" type="id" />
+    <item name="progress" type="id" />
+    <item name="status" type="id" />
 </resources>

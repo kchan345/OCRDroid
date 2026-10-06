@@ -1,0 +1,41 @@
+<resources>
+    <style name="AppTheme" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#82D5C8</item>
+        <item name="colorOnPrimary">#003731</item>
+        <item name="colorPrimaryContainer">#005048</item>
+        <item name="colorOnPrimaryContainer">#9EF2E4</item>
+        <item name="colorSecondary">#B1CCC6</item>
+        <item name="colorOnSecondary">#1C3531</item>
+        <item name="colorSecondaryContainer">#334B47</item>
+        <item name="colorOnSecondaryContainer">#CCE8E2</item>
+        <item name="colorTertiary">#ADCAE6</item>
+        <item name="colorOnTertiary">#153349</item>
+        <item name="colorTertiaryContainer">#2D4961</item>
+        <item name="colorOnTertiaryContainer">#CCE5FF</item>
+        <item name="colorError">#FFB4AB</item>
+        <item name="colorOnError">#690005</item>
+        <item name="colorErrorContainer">#93000A</item>
+        <item name="colorOnErrorContainer">#FFDAD6</item>
+        <item name="colorOnBackground">#DDE4E1</item>
+        <item name="colorSurface">#0E1513</item>
+        <item name="colorOnSurface">#DDE4E1</item>
+        <item name="colorSurfaceVariant">#3F4947</item>
+        <item name="colorOnSurfaceVariant">#BEC9C6</item>
+        <item name="colorOutline">#899390</item>
+        <item name="colorOutlineVariant">#3F4947</item>
+        <item name="colorSurfaceContainerLowest">#090F0E</item>
+        <item name="colorSurfaceContainerLow">#161D1C</item>
+        <item name="colorSurfaceContainer">#1A2120</item>
+        <item name="colorSurfaceContainerHigh">#252B2A</item>
+        <item name="colorSurfaceContainerHighest">#2F3635</item>
+        <item name="android:colorBackground">#0E1513</item>
+        <item name="android:windowBackground">@color/window</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="materialButtonStyle">@style/Widget.OCRDroid.Button</item>
+        <item name="textInputStyle">@style/Widget.Material3.TextInputLayout.OutlinedBox</item>
+    </style>
+</resources>
