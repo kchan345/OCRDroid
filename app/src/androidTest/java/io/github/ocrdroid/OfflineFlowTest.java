@@ -25,8 +25,9 @@ public class OfflineFlowTest {
 
     @Test public void offlineModelImportInferenceSelectionAndEdit() throws Exception {
         Context context = context();
-        assertEquals(PackageManager.PERMISSION_DENIED,
-            context.getPackageManager().checkPermission(Manifest.permission.INTERNET, context.getPackageName()));
+        new AppSettings(context).setBackend(AppSettings.Backend.LOCAL_Q4);
+        boolean internet = context.getPackageManager().checkPermission(Manifest.permission.INTERNET,
+            context.getPackageName()) == PackageManager.PERMISSION_GRANTED;
         Uri tree = DocumentsContract.buildTreeDocumentUri(context.getPackageName() + ".fixtures", "source");
         ModelStore store = new ModelStore(context);
         assertEquals("Q4_K_M", store.importFolder(tree));
@@ -51,7 +52,11 @@ public class OfflineFlowTest {
                 vm.image = image;
                 vm.text = result.text;
                 vm.anchors = anchors;
+                vm.showingResult = true;
+                vm.editing = true;
                 vm.revision.setValue(vm.revision.getValue() + 1);
+                assertEquals(android.view.View.GONE, activity.findViewById(R.id.input_screen).getVisibility());
+                assertTrue(vm.engineSummary(), vm.engineSummary().contains("Q4_K_M on this device"));
                 SelectionEditor editor = activity.findViewById(R.id.editor);
                 DocumentView preview = activity.findViewById(R.id.preview);
                 editor.setSelection(invoice, invoice + 7);
@@ -79,6 +84,41 @@ public class OfflineFlowTest {
                 editor.setSelection(total, total + 5);
                 DocumentView preview = activity.findViewById(R.id.preview);
                 assertTrue("Unedited anchors must survive rotation", preview.highlightedRegionCount() > 0);
+                activity.findViewById(R.id.mode_toggle).performClick();
+                assertEquals(android.view.View.VISIBLE, activity.findViewById(R.id.rendered).getVisibility());
+                assertEquals(android.view.View.GONE, editor.getVisibility());
+                assertEquals("Rendered mode has no text selection to highlight", 0, preview.highlightedRegionCount());
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            Thread.sleep(1500);
+            capture(context, "rendered-preview.png");
+            var instrumentation = InstrumentationRegistry.getInstrumentation();
+            var monitor = instrumentation.addMonitor(SettingsActivity.class.getName(), null, false);
+            scenario.onActivity(activity -> {
+                androidx.drawerlayout.widget.DrawerLayout drawer = activity.findViewById(R.id.drawer);
+                drawer.openDrawer(androidx.core.view.GravityCompat.START);
+                activity.findViewById(R.id.nav_settings).performClick();
+            });
+            android.app.Activity settings = instrumentation.waitForMonitorWithTimeout(monitor, 10_000);
+            assertNotNull("Hamburger menu must open model settings", settings);
+            instrumentation.waitForIdleSync();
+            instrumentation.runOnMainSync(() -> {
+                android.widget.RadioButton q4 = settings.findViewById(R.id.engine_q4);
+                assertTrue(q4.isChecked());
+                assertTrue(q4.getText().toString(), q4.getText().toString().contains("(imported)"));
+                assertNotNull(settings.findViewById(R.id.cloud_url));
+                assertNotNull(settings.findViewById(R.id.import_model));
+            });
+            capture(context, "settings-preview.png");
+            instrumentation.runOnMainSync(settings::finish);
+            instrumentation.removeMonitor(monitor);
+            scenario.onActivity(activity -> {
+                OcrViewModel vm = new ViewModelProvider(activity).get(OcrViewModel.class);
+                activity.findViewById(R.id.mode_toggle).performClick();
+                assertTrue(vm.editing);
+                vm.backToInput();
+                assertEquals(android.view.View.VISIBLE, activity.findViewById(R.id.input_screen).getVisibility());
+                assertEquals(android.view.View.GONE, activity.findViewById(R.id.result_screen).getVisibility());
             });
             File exportDirectory = new File(context.getCacheDir(), "camera");
             assertTrue(exportDirectory.isDirectory() || exportDirectory.mkdir());
@@ -99,10 +139,18 @@ public class OfflineFlowTest {
         evidence.put("seconds", result.seconds);
         evidence.put("peak_rss_kib", result.peakRssKib);
         evidence.put("aligned_tokens", anchors.size());
-        evidence.put("internet_permission", false);
+        evidence.put("internet_permission_for_optional_cloud", internet);
+        evidence.put("network_isolated_during_test", true);
         try (FileOutputStream output = new FileOutputStream(new File(context.getFilesDir(), "app-evidence.json"))) {
             output.write(evidence.toString(2).getBytes(StandardCharsets.UTF_8));
         }
+    }
+
+    private static void capture(Context context, String name) throws java.io.IOException {
+        Bitmap screenshot = InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
+        assertNotNull(screenshot);
+        ImageFiles.write(screenshot, new File(context.getFilesDir(), name));
+        screenshot.recycle();
     }
 
     @Test public void cancellationIsAnErrorNotAnEmptySuccess() {

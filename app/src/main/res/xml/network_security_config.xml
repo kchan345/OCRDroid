@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Self-hosted vLLM servers are often reached over plain HTTP on a trusted LAN.
+     The settings page warns before such a URL is used; HTTPS is recommended. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

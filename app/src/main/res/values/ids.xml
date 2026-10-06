@@ -1,4 +1,28 @@
 <resources>
+    <item name="drawer" type="id" />
+    <item name="drawer_menu" type="id" />
+    <item name="toolbar" type="id" />
+    <item name="nav_scan" type="id" />
+    <item name="nav_settings" type="id" />
+    <item name="input_screen" type="id" />
+    <item name="result_screen" type="id" />
+    <item name="engine_summary" type="id" />
+    <item name="camera" type="id" />
+    <item name="photos" type="id" />
+    <item name="recognize" type="id" />
+    <item name="mode_toggle" type="id" />
+    <item name="rendered" type="id" />
     <item name="editor" type="id" />
     <item name="preview" type="id" />
+    <item name="settings_status" type="id" />
+    <item name="engine_q4" type="id" />
+    <item name="engine_bf16" type="id" />
+    <item name="engine_cloud" type="id" />
+    <item name="import_model" type="id" />
+    <item name="cloud_url" type="id" />
+    <item name="cloud_model" type="id" />
+    <item name="cloud_key" type="id" />
+    <item name="test_connection" type="id" />
+    <item name="save_cloud" type="id" />
+    <item name="script" type="id" />
 </resources>

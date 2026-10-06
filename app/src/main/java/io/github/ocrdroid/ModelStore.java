@@ -32,6 +32,15 @@ public final class ModelStore {
         preferences = context.getSharedPreferences("models", Context.MODE_PRIVATE);
     }
 
+    public boolean has(String precision) { return preferences.getString(precision, null) != null; }
+
+    public void remove(String precision) throws IOException {
+        String directory = preferences.getString(precision, null);
+        if (directory == null) return;
+        if (!preferences.edit().remove(precision).commit()) throw new IOException("Cannot update model selection");
+        removeBundle(new File(context.getFilesDir(), directory));
+    }
+
     public Bundle selected(String precision) throws IOException, JSONException {
         String directory = preferences.getString(precision, null);
         if (directory == null) throw new IOException(context.getString(R.string.no_model));

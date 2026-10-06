@@ -15,6 +15,8 @@ timeout 1200 adb shell am instrument -w -r "$package.test/androidx.test.runner.A
 if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' results/instrumentation.txt; then
   exit 1
 fi
-grep -q 'OK (4 tests)' results/instrumentation.txt
+grep -q 'OK (9 tests)' results/instrumentation.txt
 adb exec-out run-as "$package" cat files/app-evidence.json > results/app-evidence.json
-adb exec-out run-as "$package" cat files/selection-preview.png > results/selection-preview.png
+for shot in selection-preview rendered-preview settings-preview; do
+  adb exec-out run-as "$package" cat "files/$shot.png" > "results/$shot.png"
+done

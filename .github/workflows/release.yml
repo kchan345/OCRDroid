@@ -107,7 +107,7 @@ jobs:
 
           Install OCRDroid-preview.apk. Download/extract ovisocr2-q4.zip on the phone, then use Import model folder. Keep Q4_K_M selected.
 
-          This is a debug-signed development preview. Android emulator inference and app integration passed; performance and reliability on a physical ARM64 phone with more than 6 GB RAM remain unverified because no device runner is available. Highlights use separately licensed bundled ML Kit localization. The APK has no INTERNET permission.
+          This is a debug-signed development preview. Android emulator inference and app integration passed; performance and reliability on a physical ARM64 phone with more than 6 GB RAM remain unverified because no device runner is available. Highlights use separately licensed bundled ML Kit localization. The APK requests INTERNET only for the optional cloud (vLLM) engine; on-device OCR makes no network requests and was tested with networking disabled.
 
           App evidence: https://github.com/$GITHUB_REPOSITORY/actions/runs/$APP_RUN
           Native model gate: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GATE_RUN
