@@ -1,7 +1,13 @@
 # OCRDroid
 
-Offline Android 13 / API 33+ OCR using the Apache-2.0
-[ATH-MaaS/OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2) 0.8B model.
+Android 13 / API 33+ OCR using the Apache-2.0
+[ATH-MaaS/OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2) 0.8B model, either
+fully on the device (default) or, optionally, on your own vLLM server through the
+OpenAI chat completions API.
+
+> The download links below are for v0.1.0-preview, which predates the settings
+> drawer, Markdown view, and cloud engine described in this document. Newer
+> APKs are available as Actions artifacts until the next release.
 
 ## Downloads
 
@@ -51,21 +57,56 @@ quantizes those weights in GitHub Actions.
 
 ## Run the application
 
+The app has two parts: a **scan workflow** (main screen) and a **Model settings**
+page opened from the hamburger menu (top-left) or the **Model settings** button.
+
+### Configure a model (once)
+
 1. Download `OCRDroid-preview.apk` above and open it on the phone. Android may
    ask you to allow installation from the browser or file manager. This is a
    debug-signed development preview, not a Play Store release.
 2. Download `ovisocr2-q4.zip` and extract it to a dedicated directory
-   such as `Documents > OvisOCR2-Q4`. Select **Import model folder** in OCRDroid
-   and choose that directory, not the ZIP or an individual GGUF file.
-   The app verifies the pinned revision, sizes, GGUF headers, and SHA-256 hashes,
-   then copies the weights into private storage. Allow space for both the
-   downloaded folder and the private copy.
-3. Leave **Q4_K_M** selected. Choose **Camera** for a full-resolution capture or
-   **Photos** for the system photo picker, then tap **Read with OvisOCR2**.
-   Photo orientation is normalized and the longest edge is limited to 2048 pixels.
-4. Edit the result in the plain-text field. Select text to highlight matching
-   image regions. Choose the appropriate **Highlight language** before running
-   OCR. **Save text** exports UTF-8 text to a user-selected destination.
+   such as `Documents > OvisOCR2-Q4`.
+3. Open **☰ > Model settings**, tap **Import model folder**, and choose that
+   directory, not the ZIP or an individual GGUF file. The app verifies the pinned
+   revision, sizes, GGUF headers, and SHA-256 hashes, then copies the weights into
+   private storage. Allow space for both the downloaded folder and the private copy.
+4. Under **Inference engine**, choose **On-device Q4_K_M** (recommended),
+   **On-device BF16**, or **Cloud (vLLM server)**. Imported bundles show
+   *(imported)*; **Remove** deletes a private copy.
+5. Choose the **Highlight language** that matches your documents.
+
+### Scan a document
+
+1. On the main screen, choose **Camera** for a full-resolution capture or
+   **Photos** for the system photo picker. Orientation is normalized and the
+   longest edge is limited to 2048 pixels.
+2. OCR starts automatically. The result screen shows the **original image** and
+   the **OCR output** side by side. **Cancel** stops a run; **Run OCR** repeats it
+   (for example after changing engines); **New image** returns to step 1.
+3. The output panel toggles between **Rendered** (Markdown, tables, and cropped
+   figure regions) and **Edit** (plain text). In Edit mode, selecting text
+   highlights the matching image regions. **Save Markdown** exports UTF-8 text.
+
+### Optional: cloud inference with vLLM
+
+Run the upstream model on a machine you control, for example:
+
+```text
+vllm serve ATH-MaaS/OvisOCR2 --trust-remote-code   # vLLM 0.22.1 or newer
+```
+
+In **Model settings > Cloud**, enter the base URL (for example
+`http://192.168.1.20:8000/v1`; a trailing `/chat/completions` is accepted), the
+served model name (`ATH-MaaS/OvisOCR2`), and an optional API key, then tap
+**Test connection** (lists the served models) and **Save**. Select
+**Cloud (vLLM server)** as the engine. Requests use `temperature 0`,
+`enable_thinking=false`, at most 8192 output tokens, and send the page as a
+JPEG data URL. Highlights are still computed on the device with ML Kit.
+
+The API key is encrypted with an Android Keystore key. Plain `http://` is allowed
+for LAN servers, but the page and its text then travel **unencrypted**; use
+`https://` over untrusted networks. Only the cloud engine uses the network.
 
 The selected Q4 directory must contain these files directly, not inside another
 nested directory:
@@ -80,16 +121,17 @@ OvisOCR2-Q4
 
 For the optional BF16 bundle, the language file is `model-bf16.gguf` instead.
 Keep its own `manifest.json`; do not rename a weight file or mix files between
-bundles. Importing BF16 selects that precision automatically. Import both bundles
-if you want to switch between them with the **Model precision** selector.
+bundles. Importing BF16 while an on-device engine is selected switches to BF16.
+Import both bundles if you want to switch between them in **Model settings**.
 
 Choose an extracted subfolder rather than the storage root or the top-level
 Downloads directory, which Android may prevent the folder picker from granting.
 After successful import, OCR no longer depends on the downloaded folder. Keep a
 copy elsewhere if you want to reinstall without downloading again.
 
-There is no INTERNET permission in the installed app, no server inference, no
-model download at runtime, and no broad photo-library permission. Captures use an
+The app requests INTERNET only for the optional cloud engine. On-device OCR makes
+no network requests (CI runs it with networking disabled), there is no model
+download at runtime, and no broad photo-library permission. Captures use an
 external camera app and a narrowly scoped FileProvider URI. Model folders use
 Android's Storage Access Framework. The app retains edits through rotation;
 save text before closing it because drafts are not persisted across process death.
@@ -106,8 +148,10 @@ the app is uninstalled.
 | Not enough internal storage | Allow space for the app-private copy as well as the archive/extracted files; use Q4 rather than BF16 |
 | OCR is slow | Keep the app visible and start with a clear, small crop. The preview uses CPU inference; emulator timings are not phone speed predictions |
 | Output is incomplete | The 2048-token output limit was reached. Crop or split the page in a photo editor and import the smaller image |
-| Selected text does not highlight | Choose the correct highlight language before OCR. Edited, ambiguous, unmatched, or unsupported-script text may have no reliable region |
-| Edits disappeared after closing the app | Drafts survive rotation, not process death. Use **Save text** before closing |
+| Selected text does not highlight | Choose the correct highlight language in Model settings before OCR. Edited, ambiguous, unmatched, or unsupported-script text may have no reliable region |
+| Edits disappeared after closing the app | Drafts survive rotation, not process death. Use **Save Markdown** before closing |
+| Selection does not highlight | Switch the output panel to **Edit**, and choose the right **Highlight language** in settings |
+| Cloud: HTTP 401/404 or connection failure | Check that the base URL ends in `/v1`, the model name matches **Test connection**, the API key, and that the phone can reach the server |
 | A later preview will not install over this one | CI debug signing keys can differ between builds. Export text and retain your model folders before uninstalling/reinstalling |
 
 See [architecture.md](architecture.md) for implementation details, design
@@ -174,9 +218,9 @@ Its native Android execution passed in
 the receipt took 171.523 seconds at 1899336 KiB peak RSS, and the note took
 168.741 seconds at 1899748 KiB. Both produced the same expected text as Q4.
 These are emulator measurements, not phone performance estimates.
-Import that exported folder using the same button; the precision selector changes
-to **BF16**. Both precision variants can remain installed, and the selector switches
-between them. Arbitrary HF folders or other models are intentionally rejected.
+Import that exported folder with the same **Import model folder** button in
+**Model settings**. Both precision variants can remain installed, and the
+**Inference engine** choice switches between them. Arbitrary HF folders or other models are intentionally rejected.
 
 The initial mobile profile uses CPU inference, four or fewer threads, 4096
 context tokens, and at most 1024 image tokens. This is deliberately smaller than

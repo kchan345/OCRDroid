@@ -34,7 +34,7 @@ final class FakeOpenAiServer implements AutoCloseable {
 
     FakeOpenAiServer(Function<Request, Response> handler) throws IOException {
         this.handler = handler;
-        socket = new ServerSocket(0, 8, InetAddress.getLoopbackAddress());
+        socket = new ServerSocket(0, 8, InetAddress.getByAddress(new byte[] {127, 0, 0, 1}));
         Thread thread = new Thread(this::serve, "fake-openai");
         thread.setDaemon(true);
         thread.start();

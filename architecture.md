@@ -5,7 +5,9 @@
 OCRDroid is an Android API 33+ application that transcribes a single image
 locally using the open-weight **ATH-MaaS/OvisOCR2** model. The default deployment
 uses a Q4_K_M language model and an F16 vision encoder/projector. A BF16 language
-model is an optional, user-imported alternative.
+model is an optional, user-imported alternative. An optional **cloud engine**
+sends the page to a user-operated vLLM server through the OpenAI chat completions
+API; it is off unless the user selects it.
 
 Actual Q4 and BF16 generation has passed on Android API 33 x86_64 emulators.
 Both ARM64 and x86_64 native binaries compile, and the APK's offline import,
@@ -34,22 +36,34 @@ flowchart TD
     Page --> Localizer[Bundled offline ML Kit localizer]
     Text --> Align[Conservative text-to-region alignment]
     Localizer --> Align
-    Align --> Editor[Plain-text editor and UTF-16 anchors]
+    Page --> Cloud[Optional CloudOcr: JPEG data URL to vLLM /v1/chat/completions]
+    Cloud --> Text
+    Settings[Settings page: engine, model folders, cloud URL/key] -.-> JNI
+    Settings -.-> Cloud
+    Text --> Align
+    Align --> Editor[Edit mode: plain-text editor and UTF-16 anchors]
+    Text --> Rendered[Rendered mode: commonmark HTML in a locked-down WebView]
     Editor --> Overlay[Selection highlights on the same normalized image]
-    Editor --> Export[User-selected UTF-8 text destination]
+    Editor --> Export[User-selected UTF-8 Markdown destination]
 ```
 
 OvisOCR2 produces all displayed transcription. ML Kit's recognized text is used
 only to align source-image regions; it does not replace or silently correct the
 OvisOCR2 result. There is no HTTP inference service or Python runtime inside the
-APK, and the merged application manifest explicitly removes INTERNET permission.
+APK. The on-device engines never open network connections; INTERNET permission
+exists only for the optional cloud engine (see the trade-offs below).
 
 ## Components
 
 | Component | Responsibility |
 | --- | --- |
-| `MainActivity` | Camera/photo/folder contracts, model and language selection, controls, selection callbacks, responsive image/editor layout |
-| `OcrViewModel` | Retained UI state, serialized worker execution, progress/error messages, cancellation, and export |
+| `MainActivity` | Navigation drawer; two-step scan workflow (choose image, then side-by-side original image and output panel); Rendered/Edit toggle; selection callbacks |
+| `OcrViewModel` | Retained scan state, engine dispatch (local JNI or cloud), progress/error messages, cancellation, and export |
+| `SettingsActivity` / `SettingsViewModel` | Model settings page: engine choice, folder import/removal, cloud URL/model/key, connection test, highlight language |
+| `AppSettings` | SharedPreferences-backed configuration; API key encrypted with an AndroidKeyStore AES-GCM key |
+| `CloudOcr` | OpenAI-compatible client: endpoint normalization, request/response format, error detail, size limits, cancellation |
+| `Markdown` | commonmark (+GFM tables) to sanitized HTML with a restrictive CSP; figure boxes replaced by local image crops |
+| `Work` | Shared executors: one serializes model import/removal and inference, one handles I/O and connection tests |
 | `ImageFiles` | Content-URI decoding, EXIF orientation, sRGB conversion, longest-edge limit of 2048 pixels, transparency compositing, PNG normalization |
 | `ModelStore` | Manifest validation, size/storage checks, SHA-256 verification, GGUF headers, private weight copies, per-precision selection |
 | `OcrEngine` and `native\jni.cpp` | Java/native boundary, cancellation flag, native error propagation, UTF-8 result transfer |
@@ -199,6 +213,53 @@ The UI identifies unlocatable selections. It is possible for OvisOCR2 to
 transcribe a script that the selected localizer cannot ground. Highlight coverage
 is not a confidence score or a guarantee that the transcription is correct.
 
+## UI structure and cloud engine trade-offs
+
+**Separate settings from the scan workflow.** Model import and engine choice are
+infrequent, while scanning is repeated. The main screen therefore has only two
+steps: choose an image (camera or photos), then a result screen with the original
+image and OCR output side by side.
+Configuration lives on a separate page reached from a hamburger drawer. OCR
+starts automatically after an image is chosen, using the configured engine; if
+it is not configured, the status line says so and points to Model settings. The UI is still built in
+code rather than XML layouts, consistent with the rest of the app.
+
+**Rendered and Edit modes.** OvisOCR2 emits Markdown with HTML tables, formulas,
+and figure boxes. Rendered mode converts it with commonmark-java (GFM tables) and
+displays it in a WebView with JavaScript, file/content access, and network loads
+disabled, plus a CSP that permits only inline styles and `data:` images. Figure
+references (`images/bbox_*.jpg`) are replaced by crops from the local page, so
+nothing is fetched. Raw HTML from the model is passed through for tables, which
+the CSP and disabled JavaScript make inert. Formulas are shown as source, not
+typeset, to avoid bundling a math engine. Text selection-to-region highlighting
+works only in Edit mode, where UTF-16 anchors exist; mapping selections in
+rendered HTML back to source offsets was not worth the complexity.
+
+**Cloud engine via vLLM.** The publisher's reference deployment is vLLM, so an
+OpenAI chat completions client gives full-size server inference (larger images,
+8192 output tokens rather than 2048) without another protocol. The request mirrors
+the native prompt, uses `temperature 0` and `chat_template_kwargs.enable_thinking
+= false`, and strips any leading `<think>` block defensively. Highlights for cloud
+results still come from on-device ML Kit, so behavior is consistent across engines.
+The client uses `HttpURLConnection` (no extra dependency), refuses redirects so a
+key is never forwarded elsewhere, caps responses at 8 MB, and supports
+cancellation by disconnecting.
+
+Trade-offs accepted for the cloud option:
+
+- **INTERNET permission in the single APK.** A separate offline-only build would
+  give a stronger guarantee but doubles distribution. Instead, local engines make
+  no network calls and CI runs the on-device test with networking disabled; the
+  cloud test uses a loopback fake server.
+- **Cleartext HTTP is permitted** because self-hosted vLLM on a LAN commonly has no
+  TLS. The settings page warns when a non-loopback `http://` URL is used; HTTPS
+  uses the system trust store only.
+- **API key storage.** The key is encrypted with a non-exportable Keystore key and
+  never shown again; this protects against casual backup/file exposure, not a
+  compromised device.
+- **No real vLLM server in CI.** Request/response compatibility is tested against a
+  fake server built from the documented API, not against a live model.
+
 ## UI state, privacy, and lifecycle
 
 - Camera capture delegates to an installed camera app through a narrowly scoped
@@ -206,10 +267,10 @@ is not a confidence score or a guarantee that the transcription is correct.
   library access.
 - The same normalized image is used for inference, localization, and rendering.
   This avoids applying source-image boxes to a separately rotated/scaled preview.
-- The view model retains the bitmap, edited text, anchors, and settings through
-  activity recreation. The editor's automatic text restoration is disabled so it
+- The view model retains the bitmap, edited text, anchors, workflow step, and
+  output mode through activity recreation. The editor's automatic text restoration is disabled so it
   cannot replay a full-text edit and invalidate retained anchors during rotation.
-- Draft text is not restored after process death. **Save text** writes UTF-8 to a
+- Draft text is not restored after process death. **Save Markdown** writes UTF-8 to a
   user-selected document destination. This is explicit export, not automatic
   cloud synchronization.
 - Model files and the normalized photo are stored privately. Backup and device
@@ -217,7 +278,7 @@ is not a confidence score or a guarantee that the transcription is correct.
   is the user's choice.
 - The app keeps the screen awake while a visible operation runs. It has no
   foreground service or guarantee that Android will preserve background work.
-- No INTERNET permission is granted to the application. External camera apps,
+- INTERNET is used only by the user-selected cloud engine. External camera apps,
   keyboards, and document providers have their own permissions and behavior;
   this app's manifest cannot control those other applications.
 
@@ -244,8 +305,8 @@ editing works inside the Android app, so there is a separate integration gate.
 The emulator isolation helper disables airplane-mode radios and the emulator's
 separate Ethernet interface, then records the remaining active interfaces.
 Earlier radio-only emulator measurements are retained as historical evidence;
-they should not be confused with this stricter network-isolation check. The app
-also asserts that INTERNET permission is absent.
+they should not be confused with this stricter network-isolation check. The cloud
+tests run in the same isolated emulator against a loopback fake vLLM server.
 
 The physical-device workflow requires an existing Linux runner labeled
 `android-device`, one authorized non-emulator ARM64 device, API 33+, reported
@@ -273,6 +334,7 @@ Outstanding validation includes:
 - Real camera-app and manufacturer-specific file-provider behavior.
 - Production signing/distribution, background-work resilience, and persistent
   draft management.
+- Cloud engine output quality and compatibility against a real vLLM deployment.
 
 These are explicit limits of the preview, not capabilities inferred from a
 successful emulator run.
