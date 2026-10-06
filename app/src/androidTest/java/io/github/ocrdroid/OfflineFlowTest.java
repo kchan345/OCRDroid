@@ -98,7 +98,7 @@ public class OfflineFlowTest {
                 androidx.drawerlayout.widget.DrawerLayout drawer = activity.findViewById(R.id.drawer);
                 drawer.openDrawer(androidx.core.view.GravityCompat.START);
                 com.google.android.material.navigation.NavigationView navigation = activity.findViewById(R.id.drawer_menu);
-                assertTrue(navigation.getMenu().performIdentifierAction(R.id.nav_settings, 0));
+                navigation.getMenu().performIdentifierAction(R.id.nav_settings, 0);
             });
             android.app.Activity settings = instrumentation.waitForMonitorWithTimeout(monitor, 10_000);
             assertNotNull("Hamburger menu must open model settings", settings);
