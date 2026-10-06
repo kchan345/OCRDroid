@@ -17,6 +17,6 @@ if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' resul
 fi
 grep -q 'OK (11 tests)' results/instrumentation.txt
 adb exec-out run-as "$package" cat files/app-evidence.json > results/app-evidence.json
-for shot in input-preview adjust-preview region-preview selection-preview rendered-preview settings-preview; do
+for shot in input-preview adjust-preview adjust-fullscreen-preview region-preview selection-preview fullscreen-preview rendered-preview settings-preview; do
   adb exec-out run-as "$package" cat "files/$shot.png" > "results/$shot.png"
 done

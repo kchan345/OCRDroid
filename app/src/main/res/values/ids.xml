@@ -50,4 +50,11 @@
     <item name="save_markdown" type="id" />
     <item name="progress" type="id" />
     <item name="status" type="id" />
+    <item name="expand_image" type="id" />
+    <item name="expand_text" type="id" />
+    <item name="expand_crop" type="id" />
+    <item name="image_card" type="id" />
+    <item name="text_card" type="id" />
+    <item name="adjust_tools" type="id" />
+    <item name="adjust_bar" type="id" />
 </resources>

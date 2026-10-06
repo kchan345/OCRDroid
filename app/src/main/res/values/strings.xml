@@ -36,8 +36,8 @@
     <string name="keep_region">Region only</string>
     <string name="keep_original_detail">The full photo stays in app storage, so you can change the region later.</string>
     <string name="keep_region_detail">Only the selected region is stored; the rest of the photo, including a camera capture, is deleted.</string>
-    <string name="crop_size">Region %1$d × %2$d px · drag corners or edges</string>
-    <string name="crop_description">Image preview. Drag the corners or edges of the frame to select the region to read.</string>
+    <string name="crop_size">Region %1$d × %2$d px · pinch to zoom</string>
+    <string name="crop_description">Image preview. Drag the corners or edges of the frame to select the region to read. Pinch with two fingers to zoom and pan, double-tap to zoom in or reset.</string>
     <string name="back">Back</string>
     <string name="adjust_ready">Adjust the region, rotation, and colours, then tap Run OCR.</string>
     <string name="preparing_page">Preparing the image&#8230;</string>
@@ -53,7 +53,9 @@
     <string name="output_placeholder">*OCR output appears here.*</string>
     <string name="export_text">Save Markdown</string>
     <string name="editor_hint">OCR text appears here. Edit it as plain text, or select words to highlight their image region.</string>
-    <string name="preview_description">Document image with highlights for selected OCR text</string>
+    <string name="preview_description">Document image with highlights for selected OCR text. Pinch to zoom, drag to pan, double-tap to zoom in or reset.</string>
+    <string name="fullscreen_enter">Full screen</string>
+    <string name="fullscreen_exit">Exit full screen</string>
     <string name="selection_hint">Select text to highlight its image region. Edited or unmatched words have no reliable region.</string>
     <string name="selection_matched">Highlighted image regions: %1$d.</string>
     <string name="selection_unmatched">No reliable image region for this selection. It may be edited, unmatched, or outside the localizer\'s supported script.</string>

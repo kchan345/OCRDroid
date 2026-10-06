@@ -99,6 +99,26 @@ public class ImageEditTest {
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             Thread.sleep(500);
             capture(context, "adjust-preview.png");
+            scenario.onActivity(activity -> {
+                OcrViewModel vm = model(activity);
+                CropView crop = activity.findViewById(R.id.crop_view);
+                crop.zoomBy(2.5f);
+                assertEquals(2.5f, crop.zoom(), 1e-3f);
+                assertEquals("Zooming does not change the crop", 0.08f, vm.edits.left, 1e-4f);
+                activity.findViewById(R.id.expand_crop).performClick();
+                assertEquals(View.GONE, activity.findViewById(R.id.adjust_tools).getVisibility());
+                assertEquals(View.GONE, activity.findViewById(R.id.adjust_bar).getVisibility());
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            Thread.sleep(300);
+            capture(context, "adjust-fullscreen-preview.png");
+            scenario.onActivity(activity -> {
+                activity.findViewById(R.id.expand_crop).performClick();
+                assertEquals(View.VISIBLE, activity.findViewById(R.id.adjust_tools).getVisibility());
+                CropView crop = activity.findViewById(R.id.crop_view);
+                crop.resetZoom();
+                assertEquals(1f, crop.zoom(), 1e-3f);
+            });
 
             scenario.onActivity(activity -> activity.findViewById(R.id.apply_edits).performClick());
             await(scenario, vm -> vm.step == OcrViewModel.Step.RESULT && idle(vm));

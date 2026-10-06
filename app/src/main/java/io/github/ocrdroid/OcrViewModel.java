@@ -28,6 +28,8 @@ public final class OcrViewModel extends AndroidViewModel {
     private final ModelStore models;
     private final AppSettings settings;
     public enum Step { INPUT, ADJUST, RESULT }
+    /** Panel shown full screen: the image (adjust or result step) or the text output. */
+    public enum Expanded { NONE, IMAGE, TEXT }
 
     /** Editable base image: the decoded original, or only the selected region once the original is discarded. */
     public Bitmap source;
@@ -46,6 +48,7 @@ public final class OcrViewModel extends AndroidViewModel {
     public Step step = Step.INPUT;
     /** Output panel mode: plain-text editor when true, rendered Markdown when false. */
     public boolean editing;
+    public Expanded expanded = Expanded.NONE;
     private volatile boolean cancelled;
     private volatile CloudOcr cloud;
     private boolean recognizing;
@@ -117,6 +120,7 @@ public final class OcrViewModel extends AndroidViewModel {
                     text = "";
                     anchors = new ArrayList<>();
                     step = Step.ADJUST;
+                    expanded = Expanded.NONE;
                     status.setValue(message(R.string.adjust_ready));
                 });
             } catch (IOException | SecurityException | IllegalArgumentException error) { fail(error); }
@@ -177,6 +181,7 @@ public final class OcrViewModel extends AndroidViewModel {
                     text = "";
                     anchors = new ArrayList<>();
                     step = Step.RESULT;
+                    expanded = Expanded.NONE;
                     editing = false;
                     busy.setValue(false);
                     revision.setValue(revision.getValue() + 1);
@@ -193,6 +198,7 @@ public final class OcrViewModel extends AndroidViewModel {
         if (source == null) return;
         cancel();
         step = Step.ADJUST;
+        expanded = Expanded.NONE;
         revision.setValue(revision.getValue() + 1);
     }
 
@@ -278,6 +284,7 @@ public final class OcrViewModel extends AndroidViewModel {
     public void backToInput() {
         cancel();
         step = Step.INPUT;
+        expanded = Expanded.NONE;
         revision.setValue(revision.getValue() + 1);
     }
 

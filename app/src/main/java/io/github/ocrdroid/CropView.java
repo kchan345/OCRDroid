@@ -6,15 +6,19 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.view.GestureDetector;
 import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 
 /**
  * Live preview of {@link Edits}: rotation and colour filters are applied while drawing, and the crop
- * can be dragged by its corners, edges, or body.
+ * can be dragged by its corners, edges, or body. Two fingers zoom and pan; once zoomed, one finger
+ * outside the crop pans; double-tap toggles zoom.
  */
 public final class CropView extends View {
-    private static final int LEFT = 1, TOP = 2, RIGHT = 4, BOTTOM = 8, MOVE = 16;
+    private static final int LEFT = 1, TOP = 2, RIGHT = 4, BOTTOM = 8, MOVE = 16, PAN = 32;
+    private static final float DOUBLE_TAP_ZOOM = 2.5f;
     private Bitmap image;
     private Edits edits = new Edits();
     private Runnable changed = () -> {};
@@ -25,7 +29,12 @@ public final class CropView extends View {
     private int mode;
     private float downX, downY;
     private final float[] start = new float[4];
-    private boolean dragging;
+    private boolean dragging, multiTouch;
+    private float lastX, lastY;
+    /** Zoom over the unzoomed view: content coordinates are the view's own pixels at zoom 1. */
+    private final Viewport viewport = new Viewport();
+    private final ScaleGestureDetector scaler;
+    private final GestureDetector taps;
 
     public CropView(Context context) {
         super(context);
@@ -35,12 +44,44 @@ public final class CropView extends View {
         accent = Ui.dp(context, 4);
         setBackgroundColor(0xFF161A19);
         setContentDescription(context.getString(R.string.crop_description));
+        scaler = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            @Override public boolean onScale(ScaleGestureDetector detector) {
+                viewport.zoomBy(detector.getScaleFactor(), detector.getFocusX(), detector.getFocusY());
+                invalidate();
+                return true;
+            }
+        });
+        taps = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
+            @Override public boolean onDoubleTap(MotionEvent event) {
+                if (viewport.zoomed()) viewport.reset();
+                else viewport.zoomBy(DOUBLE_TAP_ZOOM, event.getX(), event.getY());
+                invalidate();
+                return true;
+            }
+        });
+    }
+
+    public float zoom() { return viewport.zoom(); }
+
+    /** Zooms around the view centre (used by tests and accessibility). */
+    public void zoomBy(float factor) {
+        viewport.zoomBy(factor, getWidth() / 2f, getHeight() / 2f);
+        invalidate();
+    }
+
+    public void resetZoom() { viewport.reset(); invalidate(); }
+
+    @Override protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight);
+        viewport.setContent(width, height);
+        viewport.setView(width, height);
     }
 
     public void setAccent(int color) { accentColor = color; invalidate(); }
 
     /** Shows {@code bitmap} (usually a downscaled source) with live edits. */
     public void show(Bitmap bitmap, Edits value) {
+        if (bitmap != image) viewport.reset();
         image = bitmap;
         edits = value;
         invalidate();
@@ -55,6 +96,10 @@ public final class CropView extends View {
         float fit = (float) Math.min(width / size[0], height / size[1]);
         float w = (float) size[0] * fit, h = (float) size[1] * fit;
         frame.set((getWidth() - w) / 2f, (getHeight() - h) / 2f, (getWidth() + w) / 2f, (getHeight() + h) / 2f);
+        frame.set(viewport.toViewX(frame.left), viewport.toViewY(frame.top),
+            viewport.toViewX(frame.right), viewport.toViewY(frame.bottom));
+        w = frame.width();
+        h = frame.height();
         crop.set(frame.left + edits.left * w, frame.top + edits.top * h,
             frame.left + edits.right * w, frame.top + edits.bottom * h);
     }
@@ -105,12 +150,48 @@ public final class CropView extends View {
 
     @Override public boolean onTouchEvent(MotionEvent event) {
         if (image == null || !isEnabled()) return false;
+        scaler.onTouchEvent(event);
+        taps.onTouchEvent(event);
         layoutFrame();
         float x = event.getX(), y = event.getY();
-        switch (event.getActionMasked()) {
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_POINTER_UP
+                || (multiTouch && action == MotionEvent.ACTION_MOVE)) {
+            if (!multiTouch && mode != 0 && mode != PAN) changed.run();
+            multiTouch = true;
+            mode = 0;
+            dragging = false;
+            getParent().requestDisallowInterceptTouchEvent(true);
+            int skip = action == MotionEvent.ACTION_POINTER_UP ? event.getActionIndex() : -1;
+            float fx = 0, fy = 0;
+            int count = 0;
+            for (int i = 0; i < event.getPointerCount(); i++) {
+                if (i == skip) continue;
+                fx += event.getX(i);
+                fy += event.getY(i);
+                count++;
+            }
+            fx /= Math.max(1, count);
+            fy /= Math.max(1, count);
+            if (action == MotionEvent.ACTION_MOVE) viewport.panBy(fx - lastX, fy - lastY);
+            lastX = fx;
+            lastY = fy;
+            invalidate();
+            return true;
+        }
+        switch (action) {
             case MotionEvent.ACTION_DOWN -> {
+                multiTouch = false;
                 mode = hit(x, y);
-                if (mode == 0) return false;
+                lastX = x; lastY = y;
+                if (mode == 0) {
+                    // Keep the gesture so double-tap and pinch work; outside the crop one finger pans when zoomed.
+                    if (viewport.zoomed()) {
+                        mode = PAN;
+                        getParent().requestDisallowInterceptTouchEvent(true);
+                    }
+                    return true;
+                }
                 downX = x; downY = y;
                 start[0] = edits.left; start[1] = edits.top; start[2] = edits.right; start[3] = edits.bottom;
                 dragging = true;
@@ -119,7 +200,13 @@ public final class CropView extends View {
                 return true;
             }
             case MotionEvent.ACTION_MOVE -> {
-                if (mode == 0) return false;
+                if (mode == 0) return true;
+                if (mode == PAN) {
+                    viewport.panBy(x - lastX, y - lastY);
+                    lastX = x; lastY = y;
+                    invalidate();
+                    return true;
+                }
                 float dx = (x - downX) / frame.width(), dy = (y - downY) / frame.height();
                 if (mode == MOVE) {
                     float w = start[2] - start[0], h = start[3] - start[1];
@@ -139,14 +226,16 @@ public final class CropView extends View {
                 return true;
             }
             case MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (mode != 0 && event.getActionMasked() == MotionEvent.ACTION_UP) performClick();
+                boolean cropped = mode != 0 && mode != PAN;
+                if (cropped && action == MotionEvent.ACTION_UP) performClick();
                 mode = 0;
+                multiTouch = false;
                 dragging = false;
-                changed.run();
+                if (cropped) changed.run();
                 invalidate();
                 return true;
             }
-            default -> { return mode != 0; }
+            default -> { return true; }
         }
     }
 

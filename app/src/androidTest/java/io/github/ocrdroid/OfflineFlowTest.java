@@ -63,10 +63,34 @@ public class OfflineFlowTest {
                 assertTrue(preview.highlightedRegionCount() > 0);
             });
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-            Bitmap screenshot = InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
-            assertNotNull(screenshot);
-            ImageFiles.write(screenshot, new File(context.getFilesDir(), "selection-preview.png"));
-            screenshot.recycle();
+            Thread.sleep(600);
+            capture(context, "selection-preview.png");
+            scenario.onActivity(activity -> {
+                OcrViewModel vm = new ViewModelProvider(activity).get(OcrViewModel.class);
+                DocumentView preview = activity.findViewById(R.id.preview);
+                assertTrue("Selecting text zooms the image to it: " + preview.zoom(), preview.zoom() > 1.05f);
+                activity.findViewById(R.id.expand_image).performClick();
+                assertEquals(OcrViewModel.Expanded.IMAGE, vm.expanded);
+                assertEquals(android.view.View.GONE, activity.findViewById(R.id.text_card).getVisibility());
+                assertEquals(android.view.View.GONE, activity.findViewById(R.id.toolbar).getVisibility());
+                assertEquals(android.view.View.GONE, activity.findViewById(R.id.save_markdown).getVisibility());
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            Thread.sleep(600);
+            capture(context, "fullscreen-preview.png");
+            scenario.onActivity(activity -> {
+                OcrViewModel vm = new ViewModelProvider(activity).get(OcrViewModel.class);
+                activity.getOnBackPressedDispatcher().onBackPressed();
+                assertEquals("Back leaves full screen first", OcrViewModel.Expanded.NONE, vm.expanded);
+                assertEquals(OcrViewModel.Step.RESULT, vm.step);
+                assertEquals(android.view.View.VISIBLE, activity.findViewById(R.id.text_card).getVisibility());
+                activity.findViewById(R.id.expand_text).performClick();
+                assertEquals(android.view.View.GONE, activity.findViewById(R.id.image_card).getVisibility());
+                assertEquals(android.view.View.VISIBLE, activity.findViewById(R.id.editor).getVisibility());
+                activity.findViewById(R.id.expand_text).performClick();
+                assertEquals(android.view.View.VISIBLE, activity.findViewById(R.id.image_card).getVisibility());
+                assertEquals(android.view.View.VISIBLE, activity.findViewById(R.id.toolbar).getVisibility());
+            });
             scenario.onActivity(activity -> {
                 OcrViewModel vm = new ViewModelProvider(activity).get(OcrViewModel.class);
                 SelectionEditor editor = activity.findViewById(R.id.editor);

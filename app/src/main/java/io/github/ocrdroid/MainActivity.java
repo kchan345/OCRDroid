@@ -32,6 +32,7 @@ import androidx.core.view.GravityCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.lifecycle.ViewModelProvider;
 import com.google.android.material.appbar.MaterialToolbar;
@@ -75,7 +76,10 @@ public final class MainActivity extends AppCompatActivity {
     private boolean rendering, updating;
     private Uri cameraUri;
     private final List<View> controls = new ArrayList<>();
-    private final List<View> compactable = new ArrayList<>();
+    private View resultActions, saveButton, adjustTools, adjustBar, imageCard, textCard;
+    private MaterialButton expandCrop, expandImage, expandText;
+    private boolean typing;
+    private int focusedStart = -1, focusedEnd = -1;
 
     private final ActivityResultLauncher<PickVisualMediaRequest> photos =
         registerForActivityResult(new ActivityResultContracts.PickVisualMedia(), uri -> {
@@ -112,8 +116,11 @@ public final class MainActivity extends AppCompatActivity {
             androidx.core.graphics.Insets bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.ime());
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
-            boolean typing = insets.isVisible(WindowInsetsCompat.Type.ime());
-            for (View item : compactable) item.setVisibility(typing ? View.GONE : View.VISIBLE);
+            boolean ime = insets.isVisible(WindowInsetsCompat.Type.ime());
+            if (ime != typing) {
+                typing = ime;
+                view.post(this::applyChrome);
+            }
             return insets;
         });
 
@@ -123,7 +130,6 @@ public final class MainActivity extends AppCompatActivity {
         status.setPadding(Ui.dp(this, 16), Ui.dp(this, 2), Ui.dp(this, 16), Ui.dp(this, 6));
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         root.addView(status);
-        compactable.add(status);
         FrameLayout screens = new FrameLayout(this);
         root.addView(screens, new LinearLayout.LayoutParams(-1, 0, 1));
         inputScreen = buildInputScreen();
@@ -139,6 +145,7 @@ public final class MainActivity extends AppCompatActivity {
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override public void handleOnBackPressed() {
                 if (drawer.isDrawerOpen(GravityCompat.START)) drawer.closeDrawer(GravityCompat.START);
+                else if (model.expanded != OcrViewModel.Expanded.NONE) expand(OcrViewModel.Expanded.NONE);
                 else if (model.step == OcrViewModel.Step.RESULT && model.source != null) model.adjust();
                 else if (model.step != OcrViewModel.Step.INPUT) model.backToInput();
                 else { setEnabled(false); getOnBackPressedDispatcher().onBackPressed(); setEnabled(true); }
@@ -254,12 +261,18 @@ public final class MainActivity extends AppCompatActivity {
         cropView.setOnCropChanged(this::showCropSize);
         controls.add(cropView);
         column.addView(cropView, new LinearLayout.LayoutParams(-1, 0, 1.2f));
+        LinearLayout sizeRow = Ui.row(this);
+        sizeRow.setPadding(Ui.dp(this, 16), Ui.dp(this, 2), Ui.dp(this, 8), Ui.dp(this, 2));
         cropSize = Ui.label(this, 0, 12);
         cropSize.setId(R.id.crop_size);
-        cropSize.setGravity(Gravity.CENTER);
-        column.addView(cropSize, new LinearLayout.LayoutParams(-1, -2));
+        sizeRow.addView(cropSize, Ui.weighted());
+        expandCrop = expandButton(R.id.expand_crop, OcrViewModel.Expanded.IMAGE);
+        sizeRow.addView(expandCrop);
+        column.addView(sizeRow, new LinearLayout.LayoutParams(-1, -2));
 
         ScrollView scroll = new ScrollView(this);
+        scroll.setId(R.id.adjust_tools);
+        adjustTools = scroll;
         column.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
         LinearLayout tools = Ui.column(this);
         int pad = Ui.dp(this, 16);
@@ -351,6 +364,8 @@ public final class MainActivity extends AppCompatActivity {
         LinearLayout.LayoutParams applyParams = Ui.weighted();
         applyParams.setMarginStart(Ui.dp(this, 12));
         bar.addView(apply, applyParams);
+        bar.setId(R.id.adjust_bar);
+        adjustBar = bar;
         column.addView(bar, new LinearLayout.LayoutParams(-1, -2));
         return column;
     }
@@ -452,7 +467,7 @@ public final class MainActivity extends AppCompatActivity {
         cancel.setEnabled(false);
         actions.addView(cancel);
         column.addView(actions);
-        compactable.add(actions);
+        resultActions = actions;
 
         LinearLayout panels = Ui.row(this);
         panels.setGravity(Gravity.NO_GRAVITY);
@@ -461,7 +476,13 @@ public final class MainActivity extends AppCompatActivity {
 
         MaterialCardView leftCard = panelCard();
         LinearLayout left = Ui.content(leftCard);
-        left.addView(Ui.panelTitle(this, R.string.panel_image), panelTitleParams());
+        imageCard = leftCard;
+        leftCard.setId(R.id.image_card);
+        LinearLayout imageHeader = Ui.row(this);
+        imageHeader.addView(Ui.panelTitle(this, R.string.panel_image), Ui.weighted());
+        expandImage = expandButton(R.id.expand_image, OcrViewModel.Expanded.IMAGE);
+        imageHeader.addView(expandImage);
+        left.addView(imageHeader, panelTitleParams());
         preview = new DocumentView(this);
         preview.setId(R.id.preview);
         preview.setAccent(Ui.color(this, PRIMARY));
@@ -486,6 +507,12 @@ public final class MainActivity extends AppCompatActivity {
             refresh();
         });
         header.addView(modeGroup);
+        expandText = expandButton(R.id.expand_text, OcrViewModel.Expanded.TEXT);
+        LinearLayout.LayoutParams expandTextParams = new LinearLayout.LayoutParams(-2, -2);
+        expandTextParams.setMarginStart(Ui.dp(this, 4));
+        header.addView(expandText, expandTextParams);
+        textCard = rightCard;
+        rightCard.setId(R.id.text_card);
         right.addView(header, panelTitleParams());
         FrameLayout output = new FrameLayout(this);
         rendered = new WebView(this);
@@ -522,7 +549,7 @@ public final class MainActivity extends AppCompatActivity {
         MaterialButton save = control(Ui.tonal(this, R.string.export_text, R.drawable.ic_save, () -> export.launch("ocr.md")));
         save.setId(R.id.save_markdown);
         column.addView(save, new LinearLayout.LayoutParams(-1, -2));
-        compactable.add(save);
+        saveButton = save;
         editor.selectionChanged = this::showSelection;
         editor.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence value, int start, int count, int after) {}
@@ -620,7 +647,6 @@ public final class MainActivity extends AppCompatActivity {
             model.original != null ? model.region : null);
         editor.setVisibility(model.editing ? View.VISIBLE : View.GONE);
         rendered.setVisibility(model.editing ? View.GONE : View.VISIBLE);
-        selection.setVisibility(model.editing ? View.VISIBLE : View.GONE);
         modeGroup.check(model.editing ? R.id.mode_edit : R.id.mode_rendered);
         if (!model.editing && (!model.text.equals(renderedText) || model.image != renderedImage)) {
             renderedText = model.text;
@@ -629,6 +655,7 @@ public final class MainActivity extends AppCompatActivity {
             rendered.loadDataWithBaseURL(null, Markdown.document(markdown, this::figure), "text/html", "utf-8", null);
         }
         rendering = false;
+        applyChrome();
         showEngine();
         if (model.editing) showSelection(editor.getSelectionStart(), editor.getSelectionEnd());
         else preview.highlight(java.util.Collections.emptyList());
@@ -653,10 +680,69 @@ public final class MainActivity extends AppCompatActivity {
         return "data:image/jpeg;base64," + Base64.getEncoder().encodeToString(jpeg.toByteArray());
     }
 
+    /** Small icon button that toggles one panel between normal layout and full screen. */
+    private MaterialButton expandButton(int id, OcrViewModel.Expanded panel) {
+        MaterialButton button = Ui.iconButton(this, R.drawable.ic_open_full, R.string.fullscreen_enter,
+            () -> expand(model.expanded == panel ? OcrViewModel.Expanded.NONE : panel));
+        button.setId(id);
+        button.setMinWidth(Ui.dp(this, 40));
+        button.setMinimumWidth(Ui.dp(this, 40));
+        button.setMinHeight(Ui.dp(this, 40));
+        button.setMinimumHeight(Ui.dp(this, 40));
+        button.setInsetTop(0);
+        button.setInsetBottom(0);
+        return button;
+    }
+
+    private void expand(OcrViewModel.Expanded panel) {
+        model.expanded = panel;
+        applyChrome();
+    }
+
+    /** Shows or hides surrounding UI for full-screen panels and while the keyboard is open. */
+    private void applyChrome() {
+        OcrViewModel.Expanded expanded = model.expanded;
+        OcrViewModel.Step step = model.step;
+        boolean full = expanded != OcrViewModel.Expanded.NONE && step != OcrViewModel.Step.INPUT;
+        Ui.gone(toolbar, full);
+        Ui.gone(status, full || typing);
+        Ui.gone(resultActions, full || typing);
+        Ui.gone(saveButton, full || typing);
+        Ui.gone(adjustTools, full);
+        Ui.gone(adjustBar, full);
+        Ui.gone(cropSize, full);
+        Ui.gone(imageCard, full && expanded == OcrViewModel.Expanded.TEXT);
+        Ui.gone(textCard, full && expanded == OcrViewModel.Expanded.IMAGE);
+        Ui.gone(selection, !model.editing || (full && expanded == OcrViewModel.Expanded.IMAGE));
+        LinearLayout.LayoutParams imageParams = (LinearLayout.LayoutParams) imageCard.getLayoutParams();
+        imageParams.setMarginEnd(full ? 0 : Ui.dp(this, 6));
+        imageCard.setLayoutParams(imageParams);
+        for (MaterialButton button : new MaterialButton[] {expandCrop, expandImage, expandText}) {
+            String label = getString(full ? R.string.fullscreen_exit : R.string.fullscreen_enter);
+            button.setIconResource(full ? R.drawable.ic_close_full : R.drawable.ic_open_full);
+            button.setContentDescription(label);
+            button.setTooltipText(label);
+        }
+        WindowInsetsControllerCompat bars = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+        if (full) {
+            bars.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            bars.hide(WindowInsetsCompat.Type.systemBars());
+        } else {
+            bars.show(WindowInsetsCompat.Type.systemBars());
+        }
+    }
+
     private void showSelection(int start, int end) {
         if (preview == null || selection == null || !model.editing) return;
         List<TextAnchors.Box> boxes = TextAnchors.selected(model.anchors, start, end);
         preview.highlight(boxes);
+        if (boxes.isEmpty()) {
+            focusedStart = focusedEnd = -1;
+        } else if (start != focusedStart || end != focusedEnd) {
+            focusedStart = start;
+            focusedEnd = end;
+            preview.focusOn(boxes);
+        }
         if (start == end) selection.setText(R.string.selection_hint);
         else if (boxes.isEmpty()) selection.setText(R.string.selection_unmatched);
         else selection.setText(getString(R.string.selection_matched, boxes.size()));
