@@ -76,6 +76,7 @@ exists only for the optional cloud engine (see the trade-offs below).
 | `native\probe.cpp` | Standalone Android executable using the same inference core; emits text and metrics for CI |
 | `Localizer` | Runs the selected bundled ML Kit script recognizer on the normalized bitmap and obtains line rectangles |
 | `TextAnchors` | Aligns generated text to line rectangles and maintains UTF-16 offsets through edits |
+| `Viewport` | Pure-Java zoom/pan state (zoom 1–10×, centre in content coordinates, clamped offsets, focus targets); unit tested on the JVM |
 | `DocumentView` | Fits the OCR page, or the kept original with the OCR region outlined, to the view and applies the same transform to highlighted rectangles |
 | `SelectionEditor` | Reports selection changes from the editable plain-text field |
 
@@ -282,6 +283,18 @@ results still come from on-device ML Kit, so behavior is consistent across engin
 The client uses `HttpURLConnection` (no extra dependency), refuses redirects so a
 key is never forwarded elsewhere, caps responses at 8 MB, and supports
 cancellation by disconnecting.
+
+**Zoom, pan, and full screen.** `DocumentView` and `CropView` share `Viewport`,
+driven by the platform `ScaleGestureDetector` and `GestureDetector`, not a
+photo-view library, so there's no new dependency and highlight and crop geometry
+keep using one transform. `CropView` zooms the fitted frame and then lays its handles
+out in screen space, so handles and strokes stay the same size at any zoom; one
+finger edits the crop and two fingers pan, which costs one-finger panning inside
+the frame. Selecting text animates to the union of the matched boxes so it fills
+60% of the view, capped at 5×, and only when the selected range changes, so
+manual zoom isn't overridden while typing. Full screen is view-model state
+(`Expanded`) that hides the other panel and the app/system chrome, and it resets on
+every step change.
 
 Trade-offs accepted for the cloud option:
 

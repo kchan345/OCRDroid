@@ -34,6 +34,8 @@ public final class DocumentView extends View {
     private final ScaleGestureDetector scaler;
     private final GestureDetector gestures;
     private ValueAnimator animator;
+    /** Content rectangle to focus once the view has a size; selections can arrive before layout. */
+    private float[] pendingFocus;
     private int accent = 0xFF006A60;
 
     public DocumentView(Context context) {
@@ -77,6 +79,7 @@ public final class DocumentView extends View {
         image = bitmap;
         region = area;
         boxes = Collections.emptyList();
+        pendingFocus = null;
         if (bitmap != null) viewport.setContent(bitmap.getWidth(), bitmap.getHeight());
         viewport.reset();
         invalidate();
@@ -88,7 +91,7 @@ public final class DocumentView extends View {
     /** Current zoom; 1 means the whole image is fitted. */
     public float zoom() { return viewport.zoom(); }
 
-    public void resetZoom() { animateTo(1f, viewport.centerX(), viewport.centerY()); }
+    public void resetZoom() { pendingFocus = null; animateTo(1f, viewport.centerX(), viewport.centerY()); }
 
     /**
      * Animates zoom and pan so the highlighted boxes are centred and fill part of the view. The user
@@ -104,6 +107,11 @@ public final class DocumentView extends View {
             right = Math.max(right, item.right + ox);
             bottom = Math.max(bottom, item.bottom + oy);
         }
+        if (!viewport.ready()) {
+            pendingFocus = new float[] {left, top, right, bottom};
+            return 0f;
+        }
+        pendingFocus = null;
         float[] target = viewport.focusTarget(left, top, right, bottom, FOCUS_FILL);
         animateTo(target[0], target[1], target[2]);
         return target[0];
@@ -136,6 +144,13 @@ public final class DocumentView extends View {
     @Override protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
         super.onSizeChanged(width, height, oldWidth, oldHeight);
         viewport.setView(width, height);
+        if (pendingFocus != null && viewport.ready()) {
+            float[] area = pendingFocus;
+            pendingFocus = null;
+            float[] target = viewport.focusTarget(area[0], area[1], area[2], area[3], FOCUS_FILL);
+            viewport.set(target[0], target[1], target[2]);
+            invalidate();
+        }
     }
 
     @Override public boolean onTouchEvent(MotionEvent event) {

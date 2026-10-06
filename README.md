@@ -97,7 +97,16 @@ with a teal palette and follows the system light/dark setting.
    (or system Back) returns to **Adjust**, and the add-photo button starts over.
    The text panel toggles between **Rendered** (Markdown, tables, and cropped
    figure regions) and **Edit** (plain text). In Edit mode, selecting text
-   highlights the matching image regions. **Save Markdown** exports UTF-8 text.
+   highlights the matching image regions and zooms the image to them.
+   **Save Markdown** exports UTF-8 text.
+4. **Zoom and full screen** (Adjust and Result):
+   - Pinch to zoom (up to 10×), drag to pan, double-tap to zoom in or back out.
+     On Adjust, one finger on the frame still moves the crop; use two fingers, or
+     drag outside the frame while zoomed, to pan.
+   - Auto-zoom on selection is capped at 5×; you can keep pinching and panning
+     afterwards. Selecting other text moves to the new region.
+   - The expand button on the image or text panel shows it full screen (app bar,
+     controls, and system bars hidden). Tap the button again or press Back to exit.
 
 ### Optional: cloud inference with vLLM
 
