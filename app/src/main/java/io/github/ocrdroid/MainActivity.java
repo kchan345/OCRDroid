@@ -445,9 +445,9 @@ public final class MainActivity extends AppCompatActivity {
         recognize.setId(R.id.recognize);
         LinearLayout.LayoutParams runParams = Ui.weighted();
         runParams.setMarginStart(Ui.dp(this, 8));
-        runParams.setMarginEnd(Ui.dp(this, 8));
+        runParams.setMarginEnd(Ui.dp(this, 4));
         actions.addView(recognize, runParams);
-        cancel = Ui.outlined(this, R.string.cancel, R.drawable.ic_stop, () -> model.cancel());
+        cancel = Ui.iconButton(this, R.drawable.ic_stop, R.string.cancel, () -> model.cancel());
         cancel.setId(R.id.cancel);
         cancel.setEnabled(false);
         actions.addView(cancel);
@@ -603,7 +603,7 @@ public final class MainActivity extends AppCompatActivity {
         String summary = model.engineSummary();
         engine.setText(summary);
         engineIcon.setImageResource(new AppSettings(this).backend().local() ? R.drawable.ic_memory : R.drawable.ic_cloud);
-        toolbar.setSubtitle(summary.split("\n", 2)[0]);
+        toolbar.setSubtitle(model.step == OcrViewModel.Step.INPUT ? null : summary.split("\n", 2)[0]);
     }
 
     private void refresh() {

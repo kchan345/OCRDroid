@@ -25,7 +25,9 @@ flowchart TD
     Camera[External camera app] --> URI[Content URI]
     Photos[Android photo picker] --> URI
     URI --> Normalize[ImageDecoder: orientation, sRGB, bounded size, white background]
-    Normalize --> Page[Normalized bitmap and private page.png]
+    Normalize --> Source[Private source.png]
+    Source --> Edit[Adjust step: rotate, straighten, crop, grayscale / threshold]
+    Edit --> Page[OCR page bitmap and private page.png]
     Folder[User-selected model folder] --> Store[ModelStore: validate and copy]
     Store --> Weights[Private GGUF files]
     Page --> JNI[OcrEngine JNI]
@@ -57,7 +59,10 @@ exists only for the optional cloud engine (see the trade-offs below).
 
 | Component | Responsibility |
 | --- | --- |
-| `MainActivity` | Navigation drawer; two-step scan workflow (choose image, then side-by-side original image and output panel); Rendered/Edit toggle; selection callbacks |
+| `MainActivity` | Material navigation drawer; three-step scan workflow (choose image, adjust, side-by-side image and output panels); Rendered/Edit toggle; selection callbacks |
+| `Edits` | Pure-Java preprocessing state and maths: quarter turns, straighten angle, crop fractions of the rotated frame, colour matrices, Otsu threshold |
+| `PageEditor` / `CropView` | Renders edits onto a white canvas (shared by preview and output); interactive crop frame with live rotated and filtered preview |
+| `Ui` | Helpers for the code-built Material 3 widgets (cards, buttons, toolbar, theme colours) |
 | `OcrViewModel` | Retained scan state, engine dispatch (local JNI or cloud), progress/error messages, cancellation, and export |
 | `SettingsActivity` / `SettingsViewModel` | Model settings page: engine choice, folder import/removal, cloud URL/model/key, connection test, highlight language |
 | `AppSettings` | SharedPreferences-backed configuration; API key encrypted with an AndroidKeyStore AES-GCM key |
@@ -71,7 +76,7 @@ exists only for the optional cloud engine (see the trade-offs below).
 | `native\probe.cpp` | Standalone Android executable using the same inference core; emits text and metrics for CI |
 | `Localizer` | Runs the selected bundled ML Kit script recognizer on the normalized bitmap and obtains line rectangles |
 | `TextAnchors` | Aligns generated text to line rectangles and maintains UTF-16 offsets through edits |
-| `DocumentView` | Fits the normalized image to the view and applies the same scale/translation to highlighted rectangles |
+| `DocumentView` | Fits the OCR page, or the kept original with the OCR region outlined, to the view and applies the same transform to highlighted rectangles |
 | `SelectionEditor` | Reports selection changes from the editable plain-text field |
 
 The sources live under `app\src\main\java\io\github\ocrdroid` and `native`.
@@ -216,13 +221,46 @@ is not a confidence score or a guarantee that the transcription is correct.
 ## UI structure and cloud engine trade-offs
 
 **Separate settings from the scan workflow.** Model import and engine choice are
-infrequent, while scanning is repeated. The main screen therefore has only two
-steps: choose an image (camera or photos), then a result screen with the original
-image and OCR output side by side.
-Configuration lives on a separate page reached from a hamburger drawer. OCR
-starts automatically after an image is chosen, using the configured engine; if
-it is not configured, the status line says so and points to Model settings. The UI is still built in
-code rather than XML layouts, consistent with the rest of the app.
+infrequent, while scanning is repeated. The main screen has three steps: choose
+an image (camera or photos), adjust it, then a result screen with the image and
+OCR output side by side. Configuration lives on a separate page reached from a
+hamburger drawer. OCR starts when the user taps **Run OCR** on the adjust step,
+using the configured engine; if it is not configured, the status line says so.
+
+**Material 3 with Material Components, not Compose.** The UI is built in code
+(no XML layouts) with Material Components 1.12 widgets: cards, sliders,
+switches, segmented toggle groups, `NavigationView`, and `MaterialToolbar`, under
+a `Theme.Material3.DayNight` theme. Rewriting in Jetpack Compose (as the
+referenced F-Droid *Text Scanner* does) would add the Kotlin toolchain and a
+larger runtime for little functional gain. A fixed teal brand palette is used
+instead of Android 12 dynamic colour so CI screenshots are deterministic and
+contrast is reviewed once; dark mode follows the system.
+
+**Preprocessing editor.** Edits are non-destructive parameters (`Edits`) over the
+decoded `source.png`: clockwise quarter turns plus a ±45° straighten angle, a
+crop expressed as fractions of the rotated frame (the bounding box of the
+rotated image, corners filled white), and a colour filter. Quarter turns rotate
+the crop fractions with the image, so a selection survives rotation.
+`PageEditor` draws with one `Canvas` transform and a `ColorMatrixColorFilter`;
+`CropView` draws the preview with the same function on a 1280-pixel copy, so the
+live preview matches the output except for resolution. Black-and-white is a
+colour matrix with a steep luminance step (gain 255, luma ≥ threshold → white)
+rather than a per-pixel loop, so the slider is interactive even on large
+images. **Auto** runs Otsu's method on a 384-pixel grayscale render of the
+crop. The output frame keeps the 2048-pixel longest-edge limit.
+
+Keep modes trade convenience against storage of unneeded content:
+
+- **Original** (default) keeps `source.png` untouched and stores the rendered
+  OCR page separately. The result shows the rotated, unfiltered original with
+  the OCR region outlined; highlight boxes from the page are offset into it, and
+  the user can return to Adjust to change the region.
+- **Region only** replaces `source.png` with the colour crop (filters stay
+  adjustable), resets geometry edits, and deletes the camera capture in the
+  cache. Content outside the region cannot be recovered afterwards.
+
+ML Kit localization and figure crops use the processed OCR page, the same image
+the model receives, so highlight geometry stays exact.
 
 **Rendered and Edit modes.** OvisOCR2 emits Markdown with HTML tables, formulas,
 and figure boxes. Rendered mode converts it with commonmark-java (GFM tables) and
@@ -265,10 +303,11 @@ Trade-offs accepted for the cloud option:
 - Camera capture delegates to an installed camera app through a narrowly scoped
   FileProvider URI. Photo selection uses Android's system picker, not broad media
   library access.
-- The same normalized image is used for inference, localization, and rendering.
-  This avoids applying source-image boxes to a separately rotated/scaled preview.
-- The view model retains the bitmap, edited text, anchors, workflow step, and
-  output mode through activity recreation. The editor's automatic text restoration is disabled so it
+- The same processed OCR page is used for inference and localization. When the
+  original is kept, highlight boxes are translated by the crop offset in the
+  rotated frame rather than recomputed, so they cannot drift.
+- The view model retains the source and page bitmaps, edits, edited text,
+  anchors, workflow step, and output mode through activity recreation. The editor's automatic text restoration is disabled so it
   cannot replay a full-text edit and invalidate retained anchors during rotation.
 - Draft text is not restored after process death. **Save Markdown** writes UTF-8 to a
   user-selected document destination. This is explicit export, not automatic
@@ -292,7 +331,7 @@ relying solely on a workstation whose unified write filter may discard changes.
 | Workflow | Acceptance responsibility |
 | --- | --- |
 | `inference.yml` | Prepare Q4 weights, compile both Android ABIs, run two image-conditioned native probes on API 33, verify expected phrases, non-truncation, positive token count, and peak RSS below 3.5 GiB |
-| `app.yml` | Require a successful gate with matching native core/model pins; run unit tests and lint; build the APK; execute actual SAF import, JNI inference, localizer alignment, selection/edit/rotation/export, cancellation and image-normalization checks |
+| `app.yml` | Require a successful gate with matching native core/model pins; run unit tests and lint; build the APK; execute actual SAF import, JNI inference, localizer alignment, selection/edit/rotation/export, cancellation and image-normalization checks; preprocessing renders (rotation, crop, binarization) and both keep modes, with screenshots of each step |
 | `bf16.yml` | Export the optional BF16 language bundle and repeat native Android OCR checks with a compatible probe |
 | `device.yml` | Run acceptance on a supplied, dedicated ARM64 phone connected to a preconfigured GitHub runner |
 | `release.yml` | Publish a successful app artifact and its model provenance as a prerelease, optionally including verified BF16 weights, evidence, licenses, and SHA-256 checksums |

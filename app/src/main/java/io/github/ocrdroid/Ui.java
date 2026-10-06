@@ -88,6 +88,8 @@ final class Ui {
         MaterialButton button = new MaterialButton(overlay == 0 ? context : new ContextThemeWrapper(context, overlay));
         if (resource != 0) button.setText(resource);
         if (icon != 0) button.setIconResource(icon);
+        button.setMaxLines(1);
+        button.setEllipsize(android.text.TextUtils.TruncateAt.END);
         button.setOnClickListener(view -> action.run());
         return button;
     }

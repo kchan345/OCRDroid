@@ -57,8 +57,10 @@ quantizes those weights in GitHub Actions.
 
 ## Run the application
 
-The app has two parts: a **scan workflow** (main screen) and a **Model settings**
-page opened from the hamburger menu (top-left) or the **Model settings** button.
+The app has two parts: a three-step **scan workflow** (choose → adjust → result)
+and a **Model settings** page opened from the hamburger menu (top-left) or the
+**Change** button on the *Inference engine* card. The interface uses Material 3
+with a teal palette and follows the system light/dark setting.
 
 ### Configure a model (once)
 
@@ -78,13 +80,26 @@ page opened from the hamburger menu (top-left) or the **Model settings** button.
 
 ### Scan a document
 
-1. On the main screen, choose **Camera** for a full-resolution capture or
-   **Photos** for the system photo picker. Orientation is normalized and the
-   longest edge is limited to 2048 pixels.
-2. OCR starts automatically. The result screen shows the **original image** and
-   the **OCR output** side by side. **Cancel** stops a run; **Run OCR** repeats it
-   (for example after changing engines); **New image** returns to step 1.
-3. The output panel toggles between **Rendered** (Markdown, tables, and cropped
+1. **Choose.** Tap **Camera** for a full-resolution capture or **Photos** for the
+   system photo picker. Orientation is normalized and the longest edge is
+   limited to 2048 pixels.
+2. **Adjust** (live preview, nothing is read yet):
+   - Drag the frame's corners, edges, or interior to select the region to read;
+     the full-screen button selects the whole image again.
+   - **Rotate left/right** turns by 90°; the **Straighten** slider fixes small
+     tilts (±45°, exposed corners are filled white).
+   - **Grayscale** removes colour. **Black & white** binarizes with the
+     **Threshold** slider; **Auto** picks a threshold for the selected region
+     (Otsu's method). The preview shows exactly what the model will receive.
+   - **After OCR, keep**: **Original** keeps the full photo so you can come back
+     and change the region; **Region only** replaces the stored photo with the
+     selected (colour) region and deletes the camera capture.
+   - **Run OCR** prepares the page and starts recognition; **Back** returns to step 1.
+3. **Result.** The image and text panels are side by side. With *Original* kept,
+   the full photo is shown with the OCR region outlined. **Cancel** stops a run;
+   **Run OCR** repeats it (for example after changing engines); the crop button
+   (or system Back) returns to **Adjust**, and the add-photo button starts over.
+   The text panel toggles between **Rendered** (Markdown, tables, and cropped
    figure regions) and **Edit** (plain text). In Edit mode, selecting text
    highlights the matching image regions. **Save Markdown** exports UTF-8 text.
 
